@@ -1,85 +1,133 @@
-# Ángel – Asesor de belleza con IA (LoveMakeup C.A.)
+# Ángel — microservicio de recomendaciones para LoveMakeup
 
-Microservicio Python (FastAPI) que se conecta a tu tienda PHP/MariaDB.
+Ángel es un servicio independiente en FastAPI. Lee el catálogo existente de
+LoveMakeup (`producto`, `categoria` y `marca`), aplica filtros por stock,
+precio, categoría, marca y perfil de piel, y devuelve productos reales al chat.
+No recrea ni modifica esas tablas del sistema PHP.
 
-```
-Navegador (JS fetch) ──HTTPS+JWT──► FastAPI (Python)
-                                     │ 1. PLN: perfil (tipo de piel, necesidad, precio)
-                                     │ 2. Embedding de la consulta
-                                     │ 3. SQL híbrido + VEC_DISTANCE_COSINE ──► MariaDB 11.8
-                                     └ 4. Claude redacta la respuesta con datos reales
-```
+## Compatibilidad del catálogo
 
-## Paso a paso
+Los dumps disponibles no representan el mismo estado de la tienda ni el mismo
+servidor:
 
-### 1. Preparar el entorno
-```bash
+- El dump del hosting, `BD/bd.sql`, declara MariaDB 11.8.9 y usa
+  `u417714339_Lovemakeupbd`.
+- `Lovemakeup-3.0/lovemakeupbd1.sql` es un dump local antiguo: declara MariaDB
+  10.4 y usa la base `lovemakeupbd1`.
+- Ambos esquemas contienen las tablas `producto`, `categoria` y `marca`, con
+  las columnas relevantes `precio_detal`, `stock_disponible`, `estatus`,
+  `id_categoria` e `id_marca`, aunque sus datos/categorías difieren.
+
+El adaptador funciona con ambas versiones: los embeddings se guardan como JSON
+en una tabla auxiliar `angel_producto_ai`, por lo que no depende del tipo
+`VECTOR` de MariaDB 11.7+. El valor por defecto está alineado con el dump del
+hosting; `DB_NAME` en `.env` prevalece sobre ese valor y debe coincidir con la
+base existente.
+
+## Instalación y configuración
+
+Se requiere Python 3.10 o posterior. Desde esta carpeta:
+
+```powershell
 python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
+venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-cp .env.example .env              # completa tus claves
+Copy-Item .env.example .env
 ```
-Necesitas dos claves: `OPENAI_API_KEY` (embeddings de 1536 dimensiones) y
-`ANTHROPIC_API_KEY` (redacción de la respuesta). Sin la de Anthropic, Ángel igual
-responde con una plantilla.
 
-### 2. Preparar MariaDB 11.8
-```bash
-mariadb -u root -p < schema.sql
+Edita `.env` y define la conexión a la base real, una clave compartida para
+JWT y la clave de OpenAI:
+
+```dotenv
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_USER=angel
+DB_PASSWORD=una-clave-segura
+DB_NAME=u417714339_Lovemakeupbd
+JWT_SECRET=un-secreto-aleatorio-de-al-menos-32-caracteres
+OPENAI_API_KEY=...
 ```
-Verifica la versión: `SELECT VERSION();` (debe ser 11.7 o superior para `VECTOR`).
-Si ya tienes la tabla `productos` en tu PHP, usa el bloque `ALTER TABLE` comentado en `schema.sql`.
 
-### 3. Cargar embeddings
-```bash
-python seed.py demo       # productos de ejemplo
-python seed.py reindex    # cuando ya tengas tu catálogo real: recalcula los embeddings
+Para desarrollo local con el dump antiguo, cambia `DB_NAME=lovemakeupbd1`. No
+copies credenciales de producción a este repositorio.
+
+## Preparar la base de datos
+
+Importa primero el dump de LoveMakeup. Después, selecciona la base de datos
+correcta y ejecuta:
+
+```powershell
+cmd /c "C:\xampp\mysql\bin\mysql.exe -u root -p u417714339_Lovemakeupbd < BD\schema.sql"
 ```
-Cada vez que agregues o edites un producto, debes recalcular su embedding.
 
-### 4. Levantar el microservicio
-```bash
+Para desarrollo local, reemplaza el nombre por `lovemakeupbd1`. La tabla
+auxiliar contiene los atributos de piel/ingredientes que no existen en el
+esquema de la tienda y los embeddings del catálogo. El usuario de ejecución necesita `SELECT`
+en `producto`, `categoria` y `marca`, y `SELECT`, `INSERT` y `UPDATE` en
+`angel_producto_ai`; los `GRANT` de ejemplo están comentados en `BD/schema.sql`.
+
+Indexa los productos activos existentes:
+
+```powershell
+python seed.py reindex
+```
+
+El comando usa una llamada de embeddings de OpenAI por producto. Vuelve a
+ejecutarlo al agregar productos o cambiar su descripción, categoría o marca.
+Para completar las recomendaciones por tipo de piel e ingredientes, rellena
+los campos auxiliares con información verificada, por ejemplo:
+
+```sql
+UPDATE angel_producto_ai
+SET tipo_piel = 'grasa,mixta',
+    ingredientes_activos = 'niacinamida'
+WHERE id_producto = 12;
+```
+
+Después de editar esos atributos, vuelve a indexar.
+
+## Ejecutar y comprobar
+
+```powershell
 uvicorn main:app --reload --port 8000
 ```
-Swagger: http://localhost:8000/docs
 
-### 5. JWT desde PHP (RNF-03)
-El PHP firma el token con el **mismo** `JWT_SECRET`. Con `composer require firebase/php-jwt`:
-```php
-use Firebase\JWT\JWT;
-$token = JWT::encode(
-    ['sub' => $_SESSION['user_id'] ?? 'invitado', 'exp' => time() + 3600],
-    getenv('JWT_SECRET'), 'HS256'
-);
-echo "<script>window.ANGEL_TOKEN = " . json_encode($token) . ";</script>";
+- `GET http://127.0.0.1:8000/health`: comprueba el acceso a MariaDB.
+- `POST http://127.0.0.1:8000/api/chat`: endpoint protegido por JWT.
+- `http://127.0.0.1:8000/docs`: documentación OpenAPI.
+
+El chat necesita `OPENAI_API_KEY` para consultar embeddings. La redacción
+Anthropic es opcional; si `ANTHROPIC_API_KEY` no está configurada, se utiliza
+una respuesta de plantilla.
+
+En producción, usa HTTPS detrás de nginx/Caddy, limita `CORS_ORIGINS` al origen
+de LoveMakeup y no expongas el puerto de MariaDB ni el secreto JWT.
+
+## Conexión desde LoveMakeup
+
+El widget activo está en `Lovemakeup-3.0/vista/complementos/chat.php`. Firma un
+JWT HS256 de una hora en PHP y llama a `/api/chat`; no requiere instalar una
+dependencia JWT de Composer. Añade a `Lovemakeup-3.0/passconfig.env`:
+
+```dotenv
+ANGEL_API_URL=http://127.0.0.1:8000/api/chat
+ANGEL_JWT_SECRET=el-mismo-valor-configurado-como-JWT_SECRET-en-IAngel
 ```
-Incluye luego `chat_widget.js` en tu vista y crea `#chat-form`, `#chat-input`, `#chat-box`.
 
-### 6. Probar
-```bash
-pytest -v                                   # pruebas unitarias (PLN y JWT)
-python -c "import jwt,time;print(jwt.encode({'sub':'1','exp':time.time()+3600},'TU_JWT_SECRET',algorithm='HS256'))"
-curl -X POST http://localhost:8000/api/chat \
-  -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
-  -d '{"mensaje":"Tengo piel grasa con acné, busco una base de menos de 15 dólares"}'
-```
+Usa el mismo valor exacto para `ANGEL_JWT_SECRET` y `JWT_SECRET`. En despliegues
+separados, configura `ANGEL_API_URL` con la URL HTTPS pública del servicio y
+permite el origen de la tienda en `CORS_ORIGINS`.
 
-### 7. Cumplir RNF-01 (< 1.5 s)
-- El PLN es por reglas (instantáneo); el LLM tiene `LLM_TIMEOUT_SECONDS` y cae a plantilla si tarda.
-- Mide el tiempo en los logs (`chat atendido en ... ms`) y en las pruebas de integración.
-- Despliega el microservicio cerca de la BD (misma red/servidor).
+## Alcance actual del catálogo
 
-### 8. Producción
-- HTTPS (nginx/Caddy como proxy), `uvicorn --workers 2` o gunicorn.
-- Restringe `CORS_ORIGINS` a tu dominio y usa un `JWT_SECRET` largo.
-- Usuario de BD con mínimo privilegio (solo SELECT en `productos`).
+El servicio toma precio de `producto.precio_detal`, disponibilidad de
+`producto.stock_disponible` y solo recomienda productos con `estatus = 1` y
+stock positivo. Las categorías y marcas salen de las tablas relacionadas.
+Los dumps tienen catálogos distintos: por ejemplo, el dump local más antiguo
+solo incluye Polvo, Labial y Sombras; el dump más reciente tiene más categorías.
+El servicio no puede recomendar productos que no existan o estén inactivos en
+la base seleccionada.
 
-## Mapeo a tus requisitos
-| Requisito | Dónde |
-|---|---|
-| RF-01 consultas en lenguaje natural | `nlp.py` |
-| RF-02 recomendación por piel e ingredientes | `db.py` + `seed.py` (embeddings) |
-| RF-03 filtros precio/piel/categoría/marca | `db.buscar_productos` |
-| RNF-01 < 1.5 s | timeout + fallback en `llm.py`, FastAPI async |
-| RNF-02 disponibilidad | `/health` para monitoreo |
-| RNF-03 JWT | `auth.py` |
+Los datos originales no incluyen tipo de piel ni ingredientes activos. Esos
+filtros solo se vuelven fiables al completar `angel_producto_ai`; mientras
+estén vacíos, Ángel no debe atribuir esos atributos a un producto.

@@ -40,6 +40,11 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
+    try:
+        await db.healthcheck()
+    except Exception as e:
+        log.exception("Health check de base de datos falló")
+        raise HTTPException(503, "Base de datos no disponible") from e
     return {"status": "ok"}
 
 
@@ -62,7 +67,11 @@ async def chat(consulta: ConsultaChat, _usuario: dict = Depends(verificar_token)
         raise HTTPException(502, "Error en el servicio de IA") from e
 
     # 3) Consulta híbrida SQL + vectores (RF-02, RF-03)
-    productos = await db.buscar_productos(vec, perfil, limite=5)
+    try:
+        productos = await db.buscar_productos(vec, perfil, limite=5)
+    except db.CatalogoSinIndexarError as e:
+        log.error("%s", e)
+        raise HTTPException(503, str(e)) from e
 
     # 4) Redacción de la respuesta con datos reales
     texto = await redactar_respuesta(mensaje, perfil, productos)

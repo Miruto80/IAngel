@@ -36,7 +36,11 @@ CATEGORIAS = {
     "skincare": ["crema", "serum", "limpiador", "hidratante", "protector solar", "skincare"],
 }
 
-MARCAS = ["maybelline", "loreal", "revlon", "nyx", "ruby rose", "catrice", "essence", "vogue", "eucerin", "cerave"]
+MARCAS = [
+    "maybelline", "loreal", "revlon", "nyx", "ruby rose", "catrice",
+    "essence", "vogue", "eucerin", "cerave", "ushas", "salome",
+    "dolce bella", "katire", "ame", "valmy", "mon reve",
+]
 
 
 def _normalizar(texto: str) -> str:

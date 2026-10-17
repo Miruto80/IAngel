@@ -10,6 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials  # noqa: E402
 import pytest  # noqa: E402
 
 from auth import verificar_token  # noqa: E402
+from db import embedding_a_texto, similitud_coseno  # noqa: E402
 from nlp import extraer_perfil  # noqa: E402
 
 
@@ -38,3 +39,13 @@ def test_jwt_invalido():
     with pytest.raises(HTTPException) as e:
         verificar_token(cred)
     assert e.value.status_code == 401
+
+
+def test_similitud_coseno():
+    assert similitud_coseno([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
+    assert similitud_coseno([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+
+
+def test_embedding_a_texto_exige_1536_dimensiones():
+    with pytest.raises(ValueError, match="1536"):
+        embedding_a_texto([0.1])

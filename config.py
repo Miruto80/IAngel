@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     db_port: int = 3306
     db_user: str = "angel"
     db_password: str = ""
-    db_name: str = "lovemakeup"
+    db_name: str = "u417714339_Lovemakeupbd"
 
     jwt_secret: str
     jwt_algorithm: str = "HS256"
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     llm_model: str = "claude-haiku-5-5"
     llm_timeout_seconds: float = 1.0
 
-    cors_origins: str = "http://localhost"
+    cors_origins: str = "http://localhost,http://127.0.0.1"
 
 
 @lru_cache

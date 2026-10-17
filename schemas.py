@@ -19,7 +19,7 @@ class Producto(BaseModel):
 
 class PerfilDetectado(BaseModel):
     tipo_piel: str | None = None
-    necesidades: list[str] = []
+    necesidades: list[str] = Field(default_factory=list)
     precio_max: float | None = None
     categoria: str | None = None
     marca: str | None = None
