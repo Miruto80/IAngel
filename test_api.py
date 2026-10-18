@@ -2,6 +2,7 @@
 import asyncio
 import os
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 os.environ.setdefault("DB_HOST", "127.0.0.1")
@@ -9,8 +10,7 @@ os.environ.setdefault("DB_PORT", "3306")
 os.environ.setdefault("DB_USER", "angel")
 os.environ.setdefault("DB_PASSWORD", "")
 os.environ.setdefault("DB_NAME", "test")
-os.environ.setdefault("JWT_SECRET", "secreto_de_pruebas")
-os.environ.setdefault("JWT_ALGORITHM", "HS256")
+os.environ.setdefault("JWT_PUBLIC_KEY_PATH", os.devnull)
 os.environ.setdefault("OPENAI_API_KEY", "")
 os.environ.setdefault("EMBEDDING_MODEL", "text-embedding-3-small")
 os.environ.setdefault("GROQ_API_KEY", "")
@@ -22,7 +22,10 @@ import jwt  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 from fastapi.security import HTTPAuthorizationCredentials  # noqa: E402
 import pytest  # noqa: E402
+from cryptography.hazmat.primitives import serialization  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
 
+import auth  # noqa: E402
 from auth import verificar_token  # noqa: E402
 from db import embedding_a_texto, similitud_coseno  # noqa: E402
 import llm  # noqa: E402
@@ -44,8 +47,31 @@ def test_detecta_piel_seca():
     assert p.categoria == "skincare"
 
 
-def test_jwt_valido():
-    token = jwt.encode({"sub": "1", "exp": time.time() + 60}, "secreto_de_pruebas", algorithm="HS256")
+def test_jwt_valido(tmp_path: Path, monkeypatch):
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_key = private_key.public_key()
+    public_key_path = tmp_path / "angel_public.pem"
+    public_key_path.write_bytes(
+        public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    token = jwt.encode(
+        {"sub": "1", "exp": time.time() + 60},
+        private_pem,
+        algorithm="RS256",
+    )
+    monkeypatch.setattr(
+        auth,
+        "get_settings",
+        lambda: SimpleNamespace(jwt_public_key_path=str(public_key_path)),
+    )
     cred = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
     assert verificar_token(cred)["sub"] == "1"
 

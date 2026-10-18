@@ -5,24 +5,6 @@ LoveMakeup (`producto`, `categoria` y `marca`), aplica filtros por stock,
 precio, categoría, marca y perfil de piel, y devuelve productos reales al chat.
 No recrea ni modifica esas tablas del sistema PHP.
 
-## Compatibilidad del catálogo
-
-Los dumps disponibles no representan el mismo estado de la tienda ni el mismo
-servidor:
-
-- El dump del hosting, `BD/bd.sql`, declara MariaDB 11.8.9 y usa
-  `u417714339_Lovemakeupbd`.
-- `Lovemakeup-3.0/lovemakeupbd1.sql` es un dump local antiguo: declara MariaDB
-  10.4 y usa la base `lovemakeupbd1`.
-- Ambos esquemas contienen las tablas `producto`, `categoria` y `marca`, con
-  las columnas relevantes `precio_detal`, `stock_disponible`, `estatus`,
-  `id_categoria` e `id_marca`, aunque sus datos/categorías difieren.
-
-El adaptador funciona con ambas versiones: los embeddings se guardan como JSON
-en una tabla auxiliar `angel_producto_ai`, por lo que no depende del tipo
-`VECTOR` de MariaDB 11.7+. El valor por defecto está alineado con el dump del
-hosting; `DB_NAME` en `.env` prevalece sobre ese valor y debe coincidir con la
-base existente.
 
 ## Instalación y configuración
 
@@ -35,8 +17,9 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Edita `.env` y define la conexión a la base real, una clave compartida para
-JWT, la clave de OpenAI para embeddings y la clave de Groq para redactar:
+Edita `.env` y define la conexión a la base real, la ruta a la clave pública
+RS256 de Ángel, la clave de OpenAI para embeddings y la clave de Groq para
+redactar:
 
 ```dotenv
 DB_HOST=127.0.0.1
@@ -44,7 +27,7 @@ DB_PORT=3306
 DB_USER=angel
 DB_PASSWORD=una-clave-segura
 DB_NAME=u417714339_Lovemakeupbd
-JWT_SECRET=un-secreto-aleatorio-de-al-menos-32-caracteres
+JWT_PUBLIC_KEY_PATH=C:\ruta\segura\angel_jwt_public.pem
 OPENAI_API_KEY=...
 GROQ_API_KEY=...
 ```
@@ -102,22 +85,24 @@ Groq con el modelo `qwen/qwen3.8-27b`; si `GROQ_API_KEY` no está configurada o
 la solicitud al modelo falla, se utiliza una respuesta de plantilla.
 
 En producción, usa HTTPS detrás de nginx/Caddy, limita `CORS_ORIGINS` al origen
-de LoveMakeup y no expongas el puerto de MariaDB ni el secreto JWT.
+de LoveMakeup y no expongas el puerto de MariaDB ni las claves privadas.
 
 ## Conexión desde LoveMakeup
 
 El widget activo está en `Lovemakeup-3.0/vista/complementos/chat.php`. Firma un
-JWT HS256 de una hora en PHP y llama a `/api/chat`; no requiere instalar una
-dependencia JWT de Composer. Añade a `Lovemakeup-3.0/passconfig.env`:
+JWT RS256 de una hora con la clave privada dedicada a Ángel y llama a
+`/api/chat`. Configura `ANGEL_PRIVATE_KEY_PATH` en
+`Lovemakeup-3.0/passconfig.env` con la ruta a esa clave. La clave pública
+correspondiente se configura en `JWT_PUBLIC_KEY_PATH` del `.env` de IAngel.
+No reutilices las llaves de la tienda ni guardes la privada en el repositorio.
 
 ```dotenv
 ANGEL_API_URL=http://127.0.0.1:8000/api/chat
-ANGEL_JWT_SECRET=el-mismo-valor-configurado-como-JWT_SECRET-en-IAngel
+ANGEL_PRIVATE_KEY_PATH=C:\xampp\htdocs\Lovemakeup-3.0\config\angel_jwt_private.pem
 ```
 
-Usa el mismo valor exacto para `ANGEL_JWT_SECRET` y `JWT_SECRET`. En despliegues
-separados, configura `ANGEL_API_URL` con la URL HTTPS pública del servicio y
-permite el origen de la tienda en `CORS_ORIGINS`.
+En despliegues separados, configura `ANGEL_API_URL` con la URL HTTPS pública
+del servicio y permite el origen de la tienda en `CORS_ORIGINS`.
 
 ## Alcance actual del catálogo
 

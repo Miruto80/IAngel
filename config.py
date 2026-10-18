@@ -18,8 +18,7 @@ class Settings(BaseSettings):
     db_password: str = Field(validation_alias="DB_PASSWORD")
     db_name: str = Field(validation_alias="DB_NAME")
 
-    jwt_secret: str = Field(validation_alias="JWT_SECRET")
-    jwt_algorithm: str = Field(validation_alias="JWT_ALGORITHM")
+    jwt_public_key_path: str = Field(validation_alias="JWT_PUBLIC_KEY_PATH")
 
     openai_api_key: str = Field(validation_alias="OPENAI_API_KEY")
     embedding_model: str = Field(validation_alias="EMBEDDING_MODEL")
