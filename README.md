@@ -1,4 +1,4 @@
-# Ángel — microservicio de recomendaciones para LoveMakeup
+a# Ángel — microservicio de recomendaciones para LoveMakeup
 
 Ángel es un servicio independiente en FastAPI. Lee el catálogo existente de
 LoveMakeup (`producto`, `categoria` y `marca`), aplica filtros por stock,

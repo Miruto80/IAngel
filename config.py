@@ -1,28 +1,34 @@
 from functools import lru_cache
+from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=Path(__file__).resolve().parent / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
-    db_host: str = "127.0.0.1"
-    db_port: int = 3306
-    db_user: str = "angel"
-    db_password: str = ""
-    db_name: str = "u417714339_Lovemakeupbd"
+    db_host: str = Field(validation_alias="DB_HOST")
+    db_port: int = Field(validation_alias="DB_PORT")
+    db_user: str = Field(validation_alias="DB_USER")
+    db_password: str = Field(validation_alias="DB_PASSWORD")
+    db_name: str = Field(validation_alias="DB_NAME")
 
-    jwt_secret: str
-    jwt_algorithm: str = "HS256"
+    jwt_secret: str = Field(validation_alias="JWT_SECRET")
+    jwt_algorithm: str = Field(validation_alias="JWT_ALGORITHM")
 
-    openai_api_key: str = ""
-    embedding_model: str = "text-embedding-3-small"  # 1536 dimensiones
+    openai_api_key: str = Field(validation_alias="OPENAI_API_KEY")
+    embedding_model: str = Field(validation_alias="EMBEDDING_MODEL")
 
-    groq_api_key: str = ""
-    llm_model: str = "qwen/qwen3.8-27b"
-    llm_timeout_seconds: float = 1.0
+    groq_api_key: str = Field(validation_alias="GROQ_API_KEY")
+    llm_model: str = Field(validation_alias="LLM_MODEL")
+    llm_timeout_seconds: float = Field(validation_alias="LLM_TIMEOUT_SECONDS")
 
-    cors_origins: str = "http://localhost,http://127.0.0.1"
+    cors_origins: str = Field(validation_alias="CORS_ORIGINS")
 
 
 @lru_cache

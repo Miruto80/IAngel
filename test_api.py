@@ -4,7 +4,19 @@ import os
 import time
 from types import SimpleNamespace
 
+os.environ.setdefault("DB_HOST", "127.0.0.1")
+os.environ.setdefault("DB_PORT", "3306")
+os.environ.setdefault("DB_USER", "angel")
+os.environ.setdefault("DB_PASSWORD", "")
+os.environ.setdefault("DB_NAME", "test")
 os.environ.setdefault("JWT_SECRET", "secreto_de_pruebas")
+os.environ.setdefault("JWT_ALGORITHM", "HS256")
+os.environ.setdefault("OPENAI_API_KEY", "")
+os.environ.setdefault("EMBEDDING_MODEL", "text-embedding-3-small")
+os.environ.setdefault("GROQ_API_KEY", "")
+os.environ.setdefault("LLM_MODEL", "qwen/qwen3.8-27b")
+os.environ.setdefault("LLM_TIMEOUT_SECONDS", "1.0")
+os.environ.setdefault("CORS_ORIGINS", "http://localhost")
 
 import jwt  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
