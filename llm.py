@@ -51,9 +51,9 @@ async def redactar_respuesta(
 
     catalogo = "\n".join(
         f"- id={p.id} | {p.nombre} | {p.categoria} | {p.marca} | ${p.precio:.2f} | "
-        f"piel: {p.tipo_piel} | activos: {p.ingredientes_activos}"
+        f"piel: {p.tipo_piel} | activos: {p.ingredientes_activos}" """ sustituir estas columnas por vector dentro de descripcion  """
         for p in productos
-    ) or "(sin resultados)"
+    ) or "(sin resultados)" 
 
     contenido = (
         f"Mensaje del cliente: {mensaje}\n"
