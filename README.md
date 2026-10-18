@@ -36,7 +36,7 @@ Copy-Item .env.example .env
 ```
 
 Edita `.env` y define la conexión a la base real, una clave compartida para
-JWT y la clave de OpenAI:
+JWT, la clave de OpenAI para embeddings y la clave de Groq para redactar:
 
 ```dotenv
 DB_HOST=127.0.0.1
@@ -46,6 +46,7 @@ DB_PASSWORD=una-clave-segura
 DB_NAME=u417714339_Lovemakeupbd
 JWT_SECRET=un-secreto-aleatorio-de-al-menos-32-caracteres
 OPENAI_API_KEY=...
+GROQ_API_KEY=...
 ```
 
 Para desarrollo local con el dump antiguo, cambia `DB_NAME=lovemakeupbd1`. No
@@ -96,9 +97,9 @@ uvicorn main:app --reload --port 8000
 - `POST http://127.0.0.1:8000/api/chat`: endpoint protegido por JWT.
 - `http://127.0.0.1:8000/docs`: documentación OpenAPI.
 
-El chat necesita `OPENAI_API_KEY` para consultar embeddings. La redacción
-Anthropic es opcional; si `ANTHROPIC_API_KEY` no está configurada, se utiliza
-una respuesta de plantilla.
+El chat necesita `OPENAI_API_KEY` para consultar embeddings. La redacción usa
+Groq con el modelo `qwen/qwen3.8-27b`; si `GROQ_API_KEY` no está configurada o
+la solicitud al modelo falla, se utiliza una respuesta de plantilla.
 
 En producción, usa HTTPS detrás de nginx/Caddy, limita `CORS_ORIGINS` al origen
 de LoveMakeup y no expongas el puerto de MariaDB ni el secreto JWT.

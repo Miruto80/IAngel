@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     embedding_model: str = "text-embedding-3-small"  # 1536 dimensiones
 
-    anthropic_api_key: str = ""
-    llm_model: str = "claude-haiku-5-5"
+    groq_api_key: str = ""
+    llm_model: str = "qwen/qwen3.8-27b"
     llm_timeout_seconds: float = 1.0
 
     cors_origins: str = "http://localhost,http://127.0.0.1"

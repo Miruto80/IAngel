@@ -1,6 +1,8 @@
 """Pruebas unitarias (XP): PLN y JWT. Ejecutar: pytest -v"""
+import asyncio
 import os
 import time
+from types import SimpleNamespace
 
 os.environ.setdefault("JWT_SECRET", "secreto_de_pruebas")
 
@@ -11,7 +13,9 @@ import pytest  # noqa: E402
 
 from auth import verificar_token  # noqa: E402
 from db import embedding_a_texto, similitud_coseno  # noqa: E402
+import llm  # noqa: E402
 from nlp import extraer_perfil  # noqa: E402
+from schemas import PerfilDetectado  # noqa: E402
 
 
 def test_detecta_piel_grasa_y_presupuesto():
@@ -49,3 +53,28 @@ def test_similitud_coseno():
 def test_embedding_a_texto_exige_1536_dimensiones():
     with pytest.raises(ValueError, match="1536"):
         embedding_a_texto([0.1])
+
+
+def test_redactar_respuesta_usa_groq_en_stream(monkeypatch):
+    class Stream:
+        async def __aiter__(self):
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="Respuesta "))])
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="de Ángel"))])
+
+    class Completions:
+        async def create(self, **kwargs):
+            self.request = kwargs
+            return Stream()
+
+    completions = Completions()
+    cliente = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    monkeypatch.setattr(llm, "_groq", cliente)
+
+    respuesta = asyncio.run(
+        llm.redactar_respuesta("Busco una crema", PerfilDetectado(), [])
+    )
+
+    assert respuesta == "Respuesta de Ángel"
+    assert completions.request["model"] == "qwen/qwen3.8-27b"
+    assert completions.request["stream"] is True
+    assert completions.request["messages"][0]["role"] == "system"
