@@ -12,22 +12,31 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    db_host: str = Field(validation_alias="DB_HOST")
-    db_port: int = Field(validation_alias="DB_PORT")
-    db_user: str = Field(validation_alias="DB_USER")
-    db_password: str = Field(validation_alias="DB_PASSWORD")
-    db_name: str = Field(validation_alias="DB_NAME")
+    db_host: str = Field(default="", validation_alias="DB_HOST")
+    db_port: int = Field(default=3306, validation_alias="DB_PORT")
+    db_user: str = Field(default="", validation_alias="DB_USER")
+    db_password: str = Field(default="", validation_alias="DB_PASSWORD")
+    db_name: str = Field(default="", validation_alias="DB_NAME")
 
     jwt_public_key_path: str = Field(validation_alias="JWT_PUBLIC_KEY_PATH")
 
-    openai_api_key: str = Field(validation_alias="OPENAI_API_KEY")
-    embedding_model: str = Field(validation_alias="EMBEDDING_MODEL")
+    openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
+    embedding_model: str = Field(
+        default="text-embedding-3-small",
+        validation_alias="EMBEDDING_MODEL",
+    )
 
     groq_api_key: str = Field(validation_alias="GROQ_API_KEY")
-    llm_model: str = Field(validation_alias="LLM_MODEL")
-    llm_timeout_seconds: float = Field(validation_alias="LLM_TIMEOUT_SECONDS")
+    llm_model: str = Field(default="qwen/qwen3.8-27b", validation_alias="LLM_MODEL")
+    llm_timeout_seconds: float = Field(
+        default=30.0,
+        validation_alias="LLM_TIMEOUT_SECONDS",
+    )
 
-    cors_origins: str = Field(validation_alias="CORS_ORIGINS")
+    cors_origins: str = Field(
+        default="http://localhost,http://127.0.0.1",
+        validation_alias="CORS_ORIGINS",
+    )
 
 
 @lru_cache

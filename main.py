@@ -5,30 +5,21 @@ Docs automáticas (Swagger):  http://localhost:8000/docs
 """
 import logging
 import time
-from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-import db
 from auth import verificar_token
 from config import get_settings
-from llm import generar_embedding, redactar_respuesta
-from nlp import extraer_perfil, texto_para_embedding
+from llm import conversar
+from nlp import extraer_perfil
 from schemas import ConsultaChat, RespuestaChat
 
 log = logging.getLogger("angel")
 logging.basicConfig(level=logging.INFO)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await db.init_pool()
-    yield
-    await db.close_pool()
-
-
-app = FastAPI(title="Ángel - Asesor de belleza LoveMakeup", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Ángel - Asesor de belleza LoveMakeup", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,11 +31,6 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    try:
-        await db.healthcheck()
-    except Exception as e:
-        log.exception("Health check de base de datos falló")
-        raise HTTPException(503, "Base de datos no disponible") from e
     return {"status": "ok"}
 
 
@@ -56,25 +42,13 @@ async def chat(consulta: ConsultaChat, _usuario: dict = Depends(verificar_token)
     if not mensaje:
         raise HTTPException(422, "El mensaje no puede estar vacío")
 
-    # 1) PLN: perfil del usuario (RF-01)
     perfil = extraer_perfil(mensaje)
 
-    # 2) Embedding de la consulta
     try:
-        vec = await generar_embedding(texto_para_embedding(mensaje, perfil))
+        texto = await conversar(mensaje, perfil, consulta.historial)
     except Exception as e:
-        log.exception("Error generando embedding")
-        raise HTTPException(502, "Error en el servicio de IA") from e
-
-    # 3) Consulta híbrida SQL + vectores (RF-02, RF-03)
-    try:
-        productos = await db.buscar_productos(vec, perfil, limite=5)
-    except db.CatalogoSinIndexarError as e:
-        log.error("%s", e)
-        raise HTTPException(503, str(e)) from e
-
-    # 4) Redacción de la respuesta con datos reales
-    texto = await redactar_respuesta(mensaje, perfil, productos)
+        log.exception("Error conversando con Qwen a través de Groq")
+        raise HTTPException(502, "Ángel no pudo conectarse con el servicio de IA") from e
 
     log.info("chat atendido en %.0f ms", (time.perf_counter() - t0) * 1000)
-    return RespuestaChat(respuesta=texto, perfil=perfil, productos=productos)
+    return RespuestaChat(respuesta=texto, perfil=perfil, productos=[])

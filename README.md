@@ -1,9 +1,8 @@
 a# Ángel — microservicio de recomendaciones para LoveMakeup
 
-Ángel es un servicio independiente en FastAPI. Lee el catálogo existente de
-LoveMakeup (`producto`, `categoria` y `marca`), aplica filtros por stock,
-precio, categoría, marca y perfil de piel, y devuelve productos reales al chat.
-No recrea ni modifica esas tablas del sistema PHP.
+Ángel es un servicio independiente en FastAPI. En el modo actual, conversa
+directamente con Qwen a través de Groq. La conexión al catálogo, embeddings y
+recomendaciones vectoriales queda reservada para una etapa posterior.
 
 
 ## Instalación y configuración
@@ -17,58 +16,24 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Edita `.env` y define la conexión a la base real, la ruta a la clave pública
-RS256 de Ángel, la clave de OpenAI para embeddings y la clave de Groq para
-redactar:
+Edita `.env` y configura la ruta a la clave pública RS256 y la clave de Groq:
 
 ```dotenv
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_USER=angel
-DB_PASSWORD=una-clave-segura
-DB_NAME=u417714339_Lovemakeupbd
 JWT_PUBLIC_KEY_PATH=C:\ruta\segura\angel_jwt_public.pem
-OPENAI_API_KEY=...
 GROQ_API_KEY=...
+LLM_MODEL=qwen/qwen3.8-27b
+LLM_TIMEOUT_SECONDS=30
 ```
 
-Para desarrollo local con el dump antiguo, cambia `DB_NAME=lovemakeupbd1`. No
-copies credenciales de producción a este repositorio.
+No copies credenciales de producción a este repositorio. MariaDB y OpenAI solo
+serán necesarios al reactivar el indexado vectorial.
 
-## Preparar la base de datos
+## Indexado vectorial (pausado)
 
-Importa primero el dump de LoveMakeup. Después, selecciona la base de datos
-correcta y ejecuta:
-
-```powershell
-cmd /c "C:\xampp\mysql\bin\mysql.exe -u root -p u417714339_Lovemakeupbd < BD\schema.sql"
-```
-
-Para desarrollo local, reemplaza el nombre por `lovemakeupbd1`. La tabla
-auxiliar contiene los atributos de piel/ingredientes que no existen en el
-esquema de la tienda y los embeddings del catálogo. El usuario de ejecución necesita `SELECT`
-en `producto`, `categoria` y `marca`, y `SELECT`, `INSERT` y `UPDATE` en
-`angel_producto_ai`; los `GRANT` de ejemplo están comentados en `BD/schema.sql`.
-
-Indexa los productos activos existentes:
-
-```powershell
-python seed.py reindex
-```
-
-El comando usa una llamada de embeddings de OpenAI por producto. Vuelve a
-ejecutarlo al agregar productos o cambiar su descripción, categoría o marca.
-Para completar las recomendaciones por tipo de piel e ingredientes, rellena
-los campos auxiliares con información verificada, por ejemplo:
-
-```sql
-UPDATE angel_producto_ai
-SET tipo_piel = 'grasa,mixta',
-    ingredientes_activos = 'niacinamida'
-WHERE id_producto = 12;
-```
-
-Después de editar esos atributos, vuelve a indexar.
+La conversación actual no inicializa MariaDB ni solicita embeddings: no hace
+falta preparar la base ni ejecutar `seed.py` para probar a Ángel. El código del
+catálogo y el comando de indexado se conservan para reactivar las
+recomendaciones con productos más adelante.
 
 ## Ejecutar y comprobar
 
@@ -76,13 +41,13 @@ Después de editar esos atributos, vuelve a indexar.
 uvicorn main:app --reload --port 8000
 ```
 
-- `GET http://127.0.0.1:8000/health`: comprueba el acceso a MariaDB.
+- `GET http://127.0.0.1:8000/health`: comprueba que el servicio esté arriba.
 - `POST http://127.0.0.1:8000/api/chat`: endpoint protegido por JWT.
 - `http://127.0.0.1:8000/docs`: documentación OpenAPI.
 
-El chat necesita `OPENAI_API_KEY` para consultar embeddings. La redacción usa
-Groq con el modelo `qwen/qwen3.8-27b`; si `GROQ_API_KEY` no está configurada o
-la solicitud al modelo falla, se utiliza una respuesta de plantilla.
+El chat envía cada mensaje a Groq usando el modelo Qwen indicado en
+`LLM_MODEL`. Necesita `GROQ_API_KEY`; si Qwen no está disponible, el endpoint
+devuelve un error en vez de inventar una respuesta de respaldo.
 
 En producción, usa HTTPS detrás de nginx/Caddy, limita `CORS_ORIGINS` al origen
 de LoveMakeup y no expongas el puerto de MariaDB ni las claves privadas.
@@ -98,22 +63,11 @@ No reutilices las llaves de la tienda ni guardes la privada en el repositorio.
 
 ```dotenv
 ANGEL_API_URL=http://127.0.0.1:8000/api/chat
-ANGEL_PRIVATE_KEY_PATH=C:\xampp\htdocs\Lovemakeup-3.0\config\angel_jwt_private.pem
+ANGEL_PRIVATE_KEY_PATH=C:\xampp\htdocs\Lovemakeup-3.0\config\ai_private.pem
 ```
 
 En despliegues separados, configura `ANGEL_API_URL` con la URL HTTPS pública
 del servicio y permite el origen de la tienda en `CORS_ORIGINS`.
 
-## Alcance actual del catálogo
-
-El servicio toma precio de `producto.precio_detal`, disponibilidad de
-`producto.stock_disponible` y solo recomienda productos con `estatus = 1` y
-stock positivo. Las categorías y marcas salen de las tablas relacionadas.
-Los dumps tienen catálogos distintos: por ejemplo, el dump local más antiguo
-solo incluye Polvo, Labial y Sombras; el dump más reciente tiene más categorías.
-El servicio no puede recomendar productos que no existan o estén inactivos en
-la base seleccionada.
-
-Los datos originales no incluyen tipo de piel ni ingredientes activos. Esos
-filtros solo se vuelven fiables al completar `angel_producto_ai`; mientras
-estén vacíos, Ángel no debe atribuir esos atributos a un producto.
+Mientras el catálogo no esté conectado, Ángel ofrece orientación general y no
+debe afirmar que conoce productos, precios o disponibilidad de la tienda.

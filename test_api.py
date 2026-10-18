@@ -29,8 +29,9 @@ import auth  # noqa: E402
 from auth import verificar_token  # noqa: E402
 from db import embedding_a_texto, similitud_coseno  # noqa: E402
 import llm  # noqa: E402
+import main  # noqa: E402
 from nlp import extraer_perfil  # noqa: E402
-from schemas import PerfilDetectado  # noqa: E402
+from schemas import ConsultaChat, MensajeConversacion, PerfilDetectado  # noqa: E402
 
 
 def test_detecta_piel_grasa_y_presupuesto():
@@ -116,3 +117,52 @@ def test_redactar_respuesta_usa_groq_en_stream(monkeypatch):
     assert completions.request["model"] == "qwen/qwen3.8-27b"
     assert completions.request["stream"] is True
     assert completions.request["messages"][0]["role"] == "system"
+
+
+def test_conversar_envia_mensaje_directo_a_qwen(monkeypatch):
+    class Completions:
+        async def create(self, **kwargs):
+            self.request = kwargs
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content="Hola, ¿qué te gustaría saber?")
+                    )
+                ]
+            )
+
+    completions = Completions()
+    cliente = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    monkeypatch.setattr(llm, "_groq", cliente)
+
+    respuesta = asyncio.run(
+        llm.conversar(
+            "Hola Ángel",
+            PerfilDetectado(),
+            [MensajeConversacion(role="user", content="Busco una crema")],
+        )
+    )
+
+    assert respuesta == "Hola, ¿qué te gustaría saber?"
+    assert completions.request["model"] == "qwen/qwen3.8-27b"
+    assert completions.request["messages"][2] == {
+        "role": "user",
+        "content": "Busco una crema",
+    }
+    assert completions.request["messages"][3] == {
+        "role": "user",
+        "content": "Hola Ángel",
+    }
+
+
+def test_chat_usa_qwen_sin_catalogo(monkeypatch):
+    async def responder(mensaje, perfil, historial):
+        return f"Respuesta Qwen: {mensaje}"
+
+    monkeypatch.setattr(main, "conversar", responder)
+    resultado = asyncio.run(
+        main.chat(ConsultaChat(mensaje="Hola Ángel"), _usuario={"sub": "test"})
+    )
+
+    assert resultado.respuesta == "Respuesta Qwen: Hola Ángel"
+    assert resultado.productos == []
