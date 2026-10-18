@@ -16,6 +16,8 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+
 Edita `.env` y configura la ruta a la clave pública RS256 y la clave de Groq:
 
 ```dotenv
