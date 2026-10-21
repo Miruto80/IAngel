@@ -15,12 +15,15 @@ class Settings(BaseSettings):
     jwt_secret: str
     jwt_algorithm: str = "HS256"
 
-    openai_api_key: str = ""
-    embedding_model: str = "text-embedding-3-small"  # 1536 dimensiones
+    # Toda la IA pasa por OpenRouter con un único cliente compatible con OpenAI:
+    # embeddings (Qwen3-Embedding) y redacción (modelo de chat de Qwen).
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    embedding_model: str = "qwen/qwen3-embedding-0.6b"
+    embedding_dim: int = 1024  # debe coincidir con EMBEDDING_MODEL y con VECTOR(N)
 
-    anthropic_api_key: str = ""
-    llm_model: str = "claude-haiku-5-5"
-    llm_timeout_seconds: float = 1.0
+    llm_model: str = "qwen/qwen3-30b-a3b:free"
+    llm_timeout_seconds: float = 3.0
 
     cors_origins: str = "http://localhost,http://127.0.0.1"
 

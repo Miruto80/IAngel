@@ -18,11 +18,13 @@ servidor:
   las columnas relevantes `precio_detal`, `stock_disponible`, `estatus`,
   `id_categoria` e `id_marca`, aunque sus datos/categorías difieren.
 
-El adaptador funciona con ambas versiones: los embeddings se guardan como JSON
-en una tabla auxiliar `angel_producto_ai`, por lo que no depende del tipo
-`VECTOR` de MariaDB 11.7+. El valor por defecto está alineado con el dump del
-hosting; `DB_NAME` en `.env` prevalece sobre ese valor y debe coincidir con la
-base existente.
+El servicio requiere MariaDB 11.7 o superior: los embeddings se guardan como
+`VECTOR(1024)` en la tabla auxiliar `angel_producto_ai` y la búsqueda por
+similitud la ejecuta la propia base con `VEC_DISTANCE_COSINE`. El dump del
+hosting declara MariaDB 11.8.9; los dumps locales antiguos (10.4) solo sirven
+como referencia del catálogo, no para ejecutar el servicio. El valor por
+defecto está alineado con el dump del hosting; `DB_NAME` en `.env` prevalece
+sobre ese valor y debe coincidir con la base existente.
 
 ## Instalación y configuración
 
@@ -45,7 +47,7 @@ DB_USER=angel
 DB_PASSWORD=una-clave-segura
 DB_NAME=u417714339_Lovemakeupbd
 JWT_SECRET=un-secreto-aleatorio-de-al-menos-32-caracteres
-OPENAI_API_KEY=...
+OPENROUTER_API_KEY=...
 ```
 
 Para desarrollo local con el dump antiguo, cambia `DB_NAME=lovemakeupbd1`. No
@@ -62,7 +64,10 @@ cmd /c "C:\xampp\mysql\bin\mysql.exe -u root -p u417714339_Lovemakeupbd < BD\sch
 
 Para desarrollo local, reemplaza el nombre por `lovemakeupbd1`. La tabla
 auxiliar contiene los atributos de piel/ingredientes que no existen en el
-esquema de la tienda y los embeddings del catálogo. El usuario de ejecución necesita `SELECT`
+esquema de la tienda y los embeddings del catálogo. Si ya tenías la tabla con
+el esquema anterior (embedding JSON en LONGTEXT), ejecuta la migración
+comentada en `BD/schema.sql` (drop + add de la columna `VECTOR(1024)`) y vuelve
+a indexar: la conversión directa no existe. El usuario de ejecución necesita `SELECT`
 en `producto`, `categoria` y `marca`, y `SELECT`, `INSERT` y `UPDATE` en
 `angel_producto_ai`; los `GRANT` de ejemplo están comentados en `BD/schema.sql`.
 
@@ -72,8 +77,9 @@ Indexa los productos activos existentes:
 python seed.py reindex
 ```
 
-El comando usa una llamada de embeddings de OpenAI por producto. Vuelve a
-ejecutarlo al agregar productos o cambiar su descripción, categoría o marca.
+El comando usa una llamada de embeddings a OpenRouter (Qwen3-Embedding,
+1024 dimensiones) por producto. Vuelve a ejecutarlo al agregar productos o
+cambiar su descripción, categoría o marca.
 Para completar las recomendaciones por tipo de piel e ingredientes, rellena
 los campos auxiliares con información verificada, por ejemplo:
 
@@ -96,9 +102,10 @@ uvicorn main:app --reload --port 8000
 - `POST http://127.0.0.1:8000/api/chat`: endpoint protegido por JWT.
 - `http://127.0.0.1:8000/docs`: documentación OpenAPI.
 
-El chat necesita `OPENAI_API_KEY` para consultar embeddings. La redacción
-Anthropic es opcional; si `ANTHROPIC_API_KEY` no está configurada, se utiliza
-una respuesta de plantilla.
+Toda la IA pasa por OpenRouter con una única `OPENROUTER_API_KEY`: los
+embeddings usan Qwen3-Embedding (`EMBEDDING_MODEL`) y la redacción un modelo de
+chat de Qwen (`LLM_MODEL`). Si la key no está configurada o el modelo tarda más
+de `LLM_TIMEOUT_SECONDS`, se utiliza una respuesta de plantilla.
 
 En producción, usa HTTPS detrás de nginx/Caddy, limita `CORS_ORIGINS` al origen
 de LoveMakeup y no expongas el puerto de MariaDB ni el secreto JWT.

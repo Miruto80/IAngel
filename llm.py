@@ -1,19 +1,23 @@
-"""Embeddings (OpenAI, 1536 dims) y redacción de la respuesta de Ángel (Claude).
+"""Embeddings y redacción de la respuesta de Ángel, todo vía OpenRouter.
 
-Anthropic no ofrece modelo de embeddings, por eso se usa OpenAI
-text-embedding-3-small, que produce exactamente 1536 dimensiones.
+Se usa la API compatible con OpenAI de OpenRouter (OPENROUTER_BASE_URL) con un
+único cliente:
+- Embeddings: qwen/qwen3-embedding-0.6b, 1024 dimensiones (EMBEDDING_DIM).
+- Redacción: un modelo de chat de Qwen (LLM_MODEL).
 """
 import asyncio
 
-from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
 from config import get_settings
 from schemas import PerfilDetectado, Producto
 
 _s = get_settings()
-_openai = AsyncOpenAI(api_key=_s.openai_api_key) if _s.openai_api_key else None
-_claude = AsyncAnthropic(api_key=_s.anthropic_api_key) if _s.anthropic_api_key else None
+_client = (
+    AsyncOpenAI(api_key=_s.openrouter_api_key, base_url=_s.openrouter_base_url)
+    if _s.openrouter_api_key
+    else None
+)
 
 SYSTEM_PROMPT = """Eres Ángel, asesor virtual de belleza de la tienda LoveMakeup (Barquisimeto, Venezuela).
 Reglas estrictas:
@@ -26,9 +30,9 @@ Reglas estrictas:
 
 
 async def generar_embedding(texto: str) -> list[float]:
-    if _openai is None:
-        raise RuntimeError("Falta OPENAI_API_KEY")
-    r = await _openai.embeddings.create(model=_s.embedding_model, input=texto)
+    if _client is None:
+        raise RuntimeError("Falta OPENROUTER_API_KEY")
+    r = await _client.embeddings.create(model=_s.embedding_model, input=texto)
     return r.data[0].embedding
 
 
@@ -46,14 +50,14 @@ def _respuesta_plantilla(productos: list[Producto]) -> str:
 async def redactar_respuesta(
     mensaje: str, perfil: PerfilDetectado, productos: list[Producto]
 ) -> str:
-    if _claude is None:
+    if _client is None:
         return _respuesta_plantilla(productos)
 
     catalogo = "\n".join(
         f"- id={p.id} | {p.nombre} | {p.categoria} | {p.marca} | ${p.precio:.2f} | "
-        f"piel: {p.tipo_piel} | activos: {p.ingredientes_activos}" """ sustituir estas columnas por vector dentro de descripcion  """
+        f"piel: {p.tipo_piel} | activos: {p.ingredientes_activos}"
         for p in productos
-    ) or "(sin resultados)" 
+    ) or "(sin resultados)"
 
     contenido = (
         f"Mensaje del cliente: {mensaje}\n"
@@ -62,14 +66,16 @@ async def redactar_respuesta(
     )
     try:
         r = await asyncio.wait_for(
-            _claude.messages.create(
+            _client.chat.completions.create(
                 model=_s.llm_model,
                 max_tokens=300,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": contenido}],
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": contenido},
+                ],
             ),
             timeout=_s.llm_timeout_seconds,
         )
-        return r.content[0].text.strip()
+        return r.choices[0].message.content.strip()
     except Exception:
         return _respuesta_plantilla(productos)

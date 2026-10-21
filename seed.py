@@ -13,24 +13,30 @@ from config import get_settings
 from db import embedding_a_texto
 
 s = get_settings()
-openai = AsyncOpenAI(api_key=s.openai_api_key) if s.openai_api_key else None
+client = (
+    AsyncOpenAI(api_key=s.openrouter_api_key, base_url=s.openrouter_base_url)
+    if s.openrouter_api_key
+    else None
+)
 
 
 async def embed(texto: str) -> list[float]:
-    if openai is None:
-        raise RuntimeError("Falta OPENAI_API_KEY en la configuración")
-    r = await openai.embeddings.create(model=s.embedding_model, input=texto)
+    if client is None:
+        raise RuntimeError("Falta OPENROUTER_API_KEY en la configuración")
+    r = await client.embeddings.create(model=s.embedding_model, input=texto)
     vector = r.data[0].embedding
-    if len(vector) != 1536:
-        raise ValueError(f"El modelo devolvió {len(vector)} dimensiones; se esperaban 1536")
+    if len(vector) != s.embedding_dim:
+        raise ValueError(
+            f"El modelo devolvió {len(vector)} dimensiones; se esperaban {s.embedding_dim}"
+        )
     return vector
 
 
 async def main(modo: str) -> None:
     if modo != "reindex":
         raise ValueError("Modo no válido. Use: python seed.py reindex")
-    if openai is None:
-        raise RuntimeError("Falta OPENAI_API_KEY en la configuración")
+    if client is None:
+        raise RuntimeError("Falta OPENROUTER_API_KEY en la configuración")
 
     conn = await aiomysql.connect(
         host=s.db_host,
@@ -68,7 +74,7 @@ async def main(modo: str) -> None:
                 )
                 vector = await embed(texto)
                 await cur.execute(
-                    "UPDATE angel_producto_ai SET embedding = %s WHERE id_producto = %s",
+                    "UPDATE angel_producto_ai SET embedding = VEC_FromText(%s) WHERE id_producto = %s",
                     (embedding_a_texto(vector), pid),
                 )
                 print(f"Reindexado: {nombre or pid}")

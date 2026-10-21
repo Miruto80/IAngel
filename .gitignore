@@ -1,3 +1,9 @@
 .env
 TODO.md
-AGENDS.md
+AGENTS.md
+
+# Entorno y cachés generados por Python/pytest
+venv/
+__pycache__/
+.pytest_cache/
+*.pyc

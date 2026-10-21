@@ -1,6 +1,9 @@
-"""Acceso al catálogo MariaDB de LoveMakeup (RF-02 / RF-03)."""
+"""Acceso al catálogo MariaDB de LoveMakeup (RF-02 / RF-03).
+
+La búsqueda semántica es nativa de la base (tipo VECTOR + VEC_DISTANCE_COSINE):
+requiere MariaDB 11.7+.
+"""
 import json
-import math
 
 import aiomysql
 
@@ -47,33 +50,29 @@ async def close_pool() -> None:
 
 
 def embedding_a_texto(vec: list[float]) -> str:
-    if len(vec) != 1536:
-        raise ValueError(f"Se esperaba un embedding de 1536 dimensiones; recibido: {len(vec)}")
+    """Serializa el vector como texto `[...]`, formato que acepta VEC_FromText."""
+    esperado = get_settings().embedding_dim
+    if len(vec) != esperado:
+        raise ValueError(f"Se esperaba un embedding de {esperado} dimensiones; recibido: {len(vec)}")
     return json.dumps(vec, separators=(",", ":"))
-
-
-def similitud_coseno(a: list[float], b: list[float]) -> float:
-    if len(a) != len(b):
-        raise ValueError("Los embeddings deben tener la misma cantidad de dimensiones")
-
-    norma_a = math.sqrt(sum(x * x for x in a))
-    norma_b = math.sqrt(sum(x * x for x in b))
-    if not norma_a or not norma_b:
-        return 0.0
-    return sum(x * y for x, y in zip(a, b)) / (norma_a * norma_b)
 
 
 async def buscar_productos(
     vec: list[float], perfil: PerfilDetectado, limite: int = 5
 ) -> list[Producto]:
-    """Filtra el catálogo en SQL y ordena los resultados por coseno en Python.
+    """Filtra el catálogo en SQL y ordena por distancia coseno en MariaDB.
 
-    Retorna atributos reales, sin inventar precios ni disponibilidad.
+    La similitud la calcula la propia base comparando `ai.embedding` con el
+    vector de la consulta; retorna atributos reales, sin inventar precios ni
+    disponibilidad.
     """
     if _pool is None:
         raise RuntimeError("El pool de base de datos no está inicializado")
-    if len(vec) != 1536:
-        raise ValueError(f"Se esperaba un embedding de 1536 dimensiones; recibido: {len(vec)}")
+    s = get_settings()
+    if len(vec) != s.embedding_dim:
+        raise ValueError(
+            f"Se esperaba un embedding de {s.embedding_dim} dimensiones; recibido: {len(vec)}"
+        )
 
     where = [
         "p.estatus = 1",
@@ -99,44 +98,47 @@ async def buscar_productos(
         )
         params.append(perfil.tipo_piel)
 
-    sql = f"""
-        SELECT p.id_producto AS id,
-               p.nombre,
-               COALESCE(c.nombre, 'Sin categoría') AS categoria,
-               NULLIF(m.nombre, 'Sin Marca') AS marca,
-               p.precio_detal AS precio,
-               p.stock_disponible AS stock,
-               ai.tipo_piel,
-               ai.ingredientes_activos,
-               ai.embedding
+    joins = """
         FROM producto p
         LEFT JOIN categoria c ON c.id_categoria = p.id_categoria
         LEFT JOIN marca m ON m.id_marca = p.id_marca
         LEFT JOIN angel_producto_ai ai ON ai.id_producto = p.id_producto
-        WHERE {' AND '.join(where)}
     """
+    condiciones = " AND ".join(where)
 
     async with _pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                f"""SELECT COUNT(*)
+                    {joins}
+                    WHERE {condiciones}
+                      AND (ai.id_producto IS NULL OR ai.embedding IS NULL)""",
+                params,
+            )
+            (sin_indexar,) = await cur.fetchone()
+        if sin_indexar:
+            raise CatalogoSinIndexarError(
+                "Hay productos activos sin embedding; ejecute `python seed.py reindex`"
+            )
+
         async with conn.cursor(aiomysql.DictCursor) as cur:
-            await cur.execute(sql, params)
+            await cur.execute(
+                f"""SELECT p.id_producto AS id,
+                           p.nombre,
+                           COALESCE(c.nombre, 'Sin categoría') AS categoria,
+                           NULLIF(m.nombre, 'Sin Marca') AS marca,
+                           p.precio_detal AS precio,
+                           p.stock_disponible AS stock,
+                           ai.tipo_piel,
+                           ai.ingredientes_activos
+                    {joins}
+                    WHERE {condiciones} AND ai.embedding IS NOT NULL
+                    ORDER BY VEC_DISTANCE_COSINE(ai.embedding, VEC_FromText(%s)) ASC
+                    LIMIT %s""",
+                [*params, embedding_a_texto(vec), limite],
+            )
             filas = await cur.fetchall()
 
-    if any(not fila["embedding"] for fila in filas):
-        raise CatalogoSinIndexarError(
-            "Hay productos activos sin embedding; ejecute `python seed.py reindex`"
-        )
-
-    puntuados = []
-    for fila in filas:
-        embedding = json.loads(fila["embedding"])
-        if len(embedding) != len(vec):
-            raise ValueError(
-                f"Embedding inválido para el producto {fila['id']}: "
-                f"se esperaban {len(vec)} dimensiones y hay {len(embedding)}"
-            )
-        puntuados.append((similitud_coseno(vec, embedding), fila))
-
-    puntuados.sort(key=lambda item: item[0], reverse=True)
     return [
         Producto(
             id=f["id"],
@@ -148,5 +150,5 @@ async def buscar_productos(
             tipo_piel=f["tipo_piel"],
             ingredientes_activos=f["ingredientes_activos"],
         )
-        for _, f in puntuados[:limite]
+        for f in filas
     ]
