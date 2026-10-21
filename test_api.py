@@ -1,18 +1,41 @@
-"""Pruebas unitarias (XP): PLN y JWT. Ejecutar: pytest -v"""
+"""Pruebas unitarias (XP): PLN y JWT RS256. Ejecutar: pytest -v"""
 import os
+import tempfile
 import time
+from pathlib import Path
 
-os.environ.setdefault("JWT_SECRET", "secreto_de_pruebas")
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+# Par RSA efímero para probar el flujo RS256 sin depender de las llaves reales
+_privada = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_privada_pem = _privada.private_bytes(
+    serialization.Encoding.PEM,
+    serialization.PrivateFormat.PKCS8,
+    serialization.NoEncryption(),
+).decode("ascii")
+_ruta_publica = Path(tempfile.mkdtemp(prefix="angel_tests_")) / "publica_test.pem"
+_ruta_publica.write_text(
+    _privada.public_key()
+    .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    .decode("ascii")
+)
+os.environ.setdefault("JWT_ALGORITHM", "RS256")
+os.environ.setdefault("JWT_PUBLIC_KEY", str(_ruta_publica))
 
 import jwt  # noqa: E402
+import pytest  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 from fastapi.security import HTTPAuthorizationCredentials  # noqa: E402
-import pytest  # noqa: E402
 
 from auth import verificar_token  # noqa: E402
 from config import get_settings  # noqa: E402
 from db import embedding_a_texto  # noqa: E402
 from nlp import extraer_perfil  # noqa: E402
+
+
+def _cred(token: str):
+    return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
 
 def test_detecta_piel_grasa_y_presupuesto():
@@ -30,15 +53,27 @@ def test_detecta_piel_seca():
 
 
 def test_jwt_valido():
-    token = jwt.encode({"sub": "1", "exp": time.time() + 60}, "secreto_de_pruebas", algorithm="HS256")
-    cred = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
-    assert verificar_token(cred)["sub"] == "1"
+    token = jwt.encode({"sub": "1", "exp": time.time() + 60}, _privada_pem, algorithm="RS256")
+    assert verificar_token(_cred(token))["sub"] == "1"
+
+
+def test_jwt_expirado():
+    token = jwt.encode({"sub": "1", "exp": time.time() - 10}, _privada_pem, algorithm="RS256")
+    with pytest.raises(HTTPException) as e:
+        verificar_token(_cred(token))
+    assert e.value.status_code == 401
+    assert "expirado" in e.value.detail
 
 
 def test_jwt_invalido():
-    cred = HTTPAuthorizationCredentials(scheme="Bearer", credentials="basura")
     with pytest.raises(HTTPException) as e:
-        verificar_token(cred)
+        verificar_token(_cred("basura"))
+    assert e.value.status_code == 401
+
+
+def test_falta_token():
+    with pytest.raises(HTTPException) as e:
+        verificar_token(None)
     assert e.value.status_code == 401
 
 

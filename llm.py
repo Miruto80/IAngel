@@ -2,7 +2,7 @@
 
 Se usa la API compatible con OpenAI de OpenRouter (OPENROUTER_BASE_URL) con un
 único cliente:
-- Embeddings: qwen/qwen3-embedding-0.6b, 1024 dimensiones (EMBEDDING_DIM).
+- Embeddings: baai/bge-m3, 1024 dimensiones (EMBEDDING_DIM).
 - Redacción: un modelo de chat de Qwen (LLM_MODEL).
 """
 import asyncio

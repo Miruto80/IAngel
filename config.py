@@ -18,18 +18,21 @@ class Settings(BaseSettings):
     db_password: str = ""
     db_name: str = "u417714339_Lovemakeupbd"
 
-    jwt_secret: str
-    jwt_algorithm: str = "HS256"
+    # El JWT lo firma el PHP con RS256 (Lovemakeup-3.0/config/jwt_private.pem);
+    # este servicio solo verifica la firma con la llave pública.
+    jwt_algorithm: str = "RS256"
+    jwt_public_key: str = ""  # PEM público; ruta relativa a este repositorio (JWT_PUBLIC_KEY)
+    jwt_secret: str = ""  # solo para el modo legado HS256
 
     # Toda la IA pasa por OpenRouter con un único cliente compatible con OpenAI:
-    # embeddings (Qwen3-Embedding) y redacción (modelo de chat de Qwen).
+    # embeddings (baai/bge-m3, 1024 dims nativas) y redacción (chat de Qwen).
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    embedding_model: str = "qwen/qwen3-embedding-0.6b"
+    embedding_model: str = "baai/bge-m3"
     embedding_dim: int = 1024  # debe coincidir con EMBEDDING_MODEL y con VECTOR(N)
 
-    llm_model: str = "qwen/qwen3-30b-a3b:free"
-    llm_timeout_seconds: float = 3.0
+    llm_model: str = "qwen/qwen3-30b-a3b-instruct-2507"
+    llm_timeout_seconds: float = 6.0
 
     cors_origins: str = "http://localhost,http://127.0.0.1"
 

@@ -1,5 +1,11 @@
 .env
 
+# Llaves privadas / certificados (nunca versionar)
+*.pem
+*.key
+*.p12
+*.pfx
+
 
 # Entorno y cachés generados por Python/pytest
 venv/

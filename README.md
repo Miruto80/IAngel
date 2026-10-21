@@ -37,8 +37,8 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Edita `.env` y define la conexión a la base real, una clave compartida para
-JWT y la clave de OpenAI:
+Edita `.env` y define la conexión a la base real, la llave pública del JWT y
+la clave de OpenRouter:
 
 ```dotenv
 DB_HOST=127.0.0.1
@@ -46,9 +46,15 @@ DB_PORT=3306
 DB_USER=angel
 DB_PASSWORD=una-clave-segura
 DB_NAME=u417714339_Lovemakeupbd
-JWT_SECRET=un-secreto-aleatorio-de-al-menos-32-caracteres
+JWT_ALGORITHM=RS256
+JWT_PUBLIC_KEY=ai_public.pem
 OPENROUTER_API_KEY=...
 ```
+
+El JWT lo firma el PHP con RS256 y aquí solo se verifica la firma con la
+llave pública (`JWT_PUBLIC_KEY`). El repo incluye `ai_public.pem`, copia de
+la misma llave que `Lovemakeup-3.0/config/jwt_public.pem`: ambos servicios
+deben compartir el mismo par de llaves.
 
 Para desarrollo local con el dump antiguo, cambia `DB_NAME=lovemakeupbd1`. No
 copies credenciales de producción a este repositorio.
@@ -77,7 +83,7 @@ Indexa los productos activos existentes:
 python seed.py reindex
 ```
 
-El comando usa una llamada de embeddings a OpenRouter (Qwen3-Embedding,
+El comando usa una llamada de embeddings a OpenRouter (baai/bge-m3,
 1024 dimensiones) por producto. Vuelve a ejecutarlo al agregar productos o
 cambiar su descripción, categoría o marca.
 Para completar las recomendaciones por tipo de piel e ingredientes, rellena
@@ -103,27 +109,25 @@ uvicorn main:app --reload --port 8000
 - `http://127.0.0.1:8000/docs`: documentación OpenAPI.
 
 Toda la IA pasa por OpenRouter con una única `OPENROUTER_API_KEY`: los
-embeddings usan Qwen3-Embedding (`EMBEDDING_MODEL`) y la redacción un modelo de
-chat de Qwen (`LLM_MODEL`). Si la key no está configurada o el modelo tarda más
-de `LLM_TIMEOUT_SECONDS`, se utiliza una respuesta de plantilla.
+embeddings usan `EMBEDDING_MODEL` (por defecto `baai/bge-m3`, 1024 dimensiones)
+y la redacción un modelo de chat de Qwen (`LLM_MODEL`, por defecto
+`qwen/qwen3-30b-a3b-instruct-2507`). Si la key no está configurada o el modelo
+tarda más de `LLM_TIMEOUT_SECONDS`, se utiliza una respuesta de plantilla.
 
 En producción, usa HTTPS detrás de nginx/Caddy, limita `CORS_ORIGINS` al origen
 de LoveMakeup y no expongas el puerto de MariaDB ni el secreto JWT.
 
 ## Conexión desde LoveMakeup
 
-El widget activo está en `Lovemakeup-3.0/vista/complementos/chat.php`. Firma un
-JWT HS256 de una hora en PHP y llama a `/api/chat`; no requiere instalar una
-dependencia JWT de Composer. Añade a `Lovemakeup-3.0/passconfig.env`:
+El backend PHP ya firma JWT RS256 con `config/jwt_private.pem` (`login.php`,
+`issue_jwt.php` y las demás APIs), así que Ángel no necesita secreto
+compartido: valida la firma con `JWT_PUBLIC_KEY`, la llave pública del mismo
+par (`ai_public.pem`, copia de `Lovemakeup-3.0/config/jwt_public.pem`).
 
-```dotenv
-ANGEL_API_URL=http://127.0.0.1:8000/api/chat
-ANGEL_JWT_SECRET=el-mismo-valor-configurado-como-JWT_SECRET-en-IAngel
-```
-
-Usa el mismo valor exacto para `ANGEL_JWT_SECRET` y `JWT_SECRET`. En despliegues
-separados, configura `ANGEL_API_URL` con la URL HTTPS pública del servicio y
-permite el origen de la tienda en `CORS_ORIGINS`.
+El cliente reutiliza el token que `login.php` ya devuelve y lo envía en el
+encabezado `Authorization: Bearer` a `/api/chat`, igual que hace con las demás
+APIs. En despliegues separados, usa la URL HTTPS pública del servicio y permite
+el origen de la tienda en `CORS_ORIGINS`.
 
 ## Alcance actual del catálogo
 

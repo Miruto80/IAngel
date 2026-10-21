@@ -2,14 +2,14 @@
 
 FastAPI + MariaDB 11.7+. Estructura plana de módulos: se ejecuta **desde esta carpeta** (no hay paquete ni `pyproject.toml`). Todo el repo está en **español** (comentarios, docstrings, errores de API, `SYSTEM_PROMPT`): mantén ese idioma en el código.
 
-**IA vía OpenRouter** (una sola `OPENROUTER_API_KEY`, cliente del SDK `openai` con `base_url`): embeddings con `qwen/qwen3-embedding-0.6b` (1024 dims) y redacción con Qwen chat (`LLM_MODEL`). No hay SDK de OpenAI ni Anthropic propios; no los reintroduzcas.
+**IA vía OpenRouter** (una sola `OPENROUTER_API_KEY`, cliente del SDK `openai` con `base_url`): embeddings con `baai/bge-m3` (1024 dims, multilingüe; `qwen/qwen3-embedding-0.6b` ya no tiene endpoints en OpenRouter: no lo uses) y redacción con Qwen chat (`LLM_MODEL`). No hay SDK de OpenAI ni Anthropic propios; no los reintroduzcas.
 
 ## Comandos
 
 ```powershell
 # Setup (PowerShell, Python 3.10+)
 python -m venv venv; venv\Scripts\Activate.ps1; pip install -r requirements.txt
-Copy-Item .env.example .env   # luego completar DB_*, JWT_SECRET, OPENROUTER_API_KEY
+Copy-Item .env.example .env   # luego completar DB_* y OPENROUTER_API_KEY (el JWT ya usa RS256 por defecto)
 
 uvicorn main:app --reload --port 8000        # servir; /health y /docs para verificar
 pytest -v                                    # tests unitarios puros (sin BD ni red)
@@ -33,16 +33,18 @@ MySQL local de XAMPP: `C:\xampp\mysql\bin\mysql.exe` (XAMPP trae MariaDB 10.4, *
 ## Flujo de `/api/chat` (en este orden)
 
 1. `nlp.extraer_perfil` — reglas deterministas, sin LLM (usa los diccionarios `TIPOS_PIEL`, `NECESIDADES`, `CATEGORIAS`, `MARCAS`; amplíalos ahí, no con LLM).
-2. `llm.generar_embedding` — OpenRouter `qwen/qwen3-embedding-0.6b`, obligatorio para buscar.
+2. `llm.generar_embedding` — OpenRouter `EMBEDDING_MODEL` (por defecto `baai/bge-m3`), obligatorio para buscar.
 3. `db.buscar_productos` — filtros en SQL + `VEC_DISTANCE_COSINE` en la misma consulta (una de conteo previa detecta catálogo sin indexar).
 4. `llm.redactar_respuesta` — Qwen chat (`LLM_MODEL`) con timeout `LLM_TIMEOUT_SECONDS`; si falta la key o falla, cae a `_respuesta_plantilla` (comportamiento esperado, no un bug).
 
 ## Configuración y entornos
 
-- `.env` se carga con pydantic-settings; `JWT_SECRET` **no tiene valor por defecto** (la app no arranca sin él). `config.get_settings` y el cliente de `llm.py` se crean a nivel de módulo / con `lru_cache`: **los cambios de `.env` requieren reiniciar el proceso**.
-- `JWT_SECRET` debe ser idéntico a `ANGEL_JWT_SECRET` en `Lovemakeup-3.0/passconfig.env` (repo hermano, fuera de este directorio): el PHP firma el JWT, Python solo lo valida (HS256, ~1 h). El widget activo es `Lovemakeup-3.0/vista/complementos/chat.php`; `chat_widget.js` de aquí es solo ejemplo de cliente.
+- `.env` se carga con pydantic-settings; con `JWT_ALGORITHM=RS256` (por defecto) la app no arranca sin `JWT_PUBLIC_KEY`; el modo legado HS256 exige `JWT_SECRET`. `config.get_settings` y el cliente de `llm.py` se crean a nivel de módulo / con `lru_cache`: **los cambios de `.env` requieren reiniciar el proceso**.
+- El PHP ya firma **RS256** con `Lovemakeup-3.0/config/jwt_private.pem` y sus APIs verifican con `config/jwt_public.pem` (mismo par; `login.php`, `issue_jwt.php`, `producto.php`, etc.). Python solo verifica: `JWT_PUBLIC_KEY` debe apuntar al PEM público de ese mismo par (`ai_public.pem` es copia de `config/jwt_public.pem`, mantenlas idénticas). No hay secreto compartido con `passconfig.env`; `chat_widget.js` de aquí es solo ejemplo de cliente y el widget `chat.php` no está committeado en el repo PHP.
 - OpenRouter es la única puerta de IA. Fase 2 pendiente (no implementada): visión con Qwen-VL (el cliente enviaría una foto en `/api/chat`); Qwen3-Embedding es solo texto.
 
 ## Verificación
 
 No hay linter, formateador ni CI configurados. Para verificar un cambio: `pytest -v` + `GET /health` (confirma acceso a MariaDB) + una petición real a `/api/chat` con JWT firmado manualmente si se tocó el flujo completo.
+
+- `todo.md` (versionado, en este repo y en `Lovemakeup-3.0`) concentra el estado y los pendientes de la integración IAngel ↔ Lovemakeup: mantenlo al día al cerrar tareas.
