@@ -1,6 +1,5 @@
 .env
-TODO.md
-AGENTS.md
+
 
 # Entorno y cachés generados por Python/pytest
 venv/
