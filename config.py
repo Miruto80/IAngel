@@ -1,10 +1,16 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Ruta relativa a este archivo, no al directorio de ejecución
+    model_config = SettingsConfigDict(
+        env_file=Path(__file__).resolve().parent / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     db_host: str = "127.0.0.1"
     db_port: int = 3306
