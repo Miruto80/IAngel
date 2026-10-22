@@ -92,8 +92,11 @@ async def buscar_productos(
         where.append("LOWER(m.nombre) LIKE %s")
         params.append(f"%{perfil.marca}%")
     if perfil.tipo_piel:
+        # Filtro opt-in: solo restringe filas con tipo_piel curado en la tabla;
+        # con la columna NULL decide la similitud del vector, no el SQL.
         where.append(
-            "(FIND_IN_SET(%s, ai.tipo_piel) > 0 "
+            "(ai.tipo_piel IS NULL "
+            "OR FIND_IN_SET(%s, ai.tipo_piel) > 0 "
             "OR FIND_IN_SET('todo_tipo', ai.tipo_piel) > 0)"
         )
         params.append(perfil.tipo_piel)

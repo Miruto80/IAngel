@@ -15,9 +15,10 @@ uvicorn main:app --reload --port 8000        # servir; /health y /docs para veri
 pytest -v                                    # tests unitarios puros (sin BD ni red)
 pytest test_api.py::test_jwt_valido          # test individual
 python seed.py reindex                       # indexar embeddings (requiere BD MariaDB 11.7+ + OPENROUTER_API_KEY)
+python prueba_e2e.py                         # e2e contra el servidor local (401/422/chat con JWT RS256; no lo recoge pytest)
 ```
 
-MySQL local de XAMPP: `C:\xampp\mysql\bin\mysql.exe` (XAMPP trae MariaDB 10.4, **sin tipo VECTOR**: no sirve para ejecutar el servicio, solo los dumps como referencia de catálogo).
+MariaDB local en la PC (Windows): el servicio **`MariaDB-Angel` (11.8.4, puerto 23307)** es el que corre el microservicio (MSI de `archive.mariadb.org`, datadir `C:\MariaDB-Angel\data`). Los dos XAMPP (`c:\xampp2` en 3306 y `c:\xampp` en 3307, MariaDB 10.x) **no tienen tipo VECTOR**: solo sirven como referencia de catálogo. `docker pull` muere en blobs grandes con `tls: bad record MAC` en esta red: no perder tiempo con Docker para esto.
 
 ## Reglas de la base de datos
 
@@ -29,12 +30,13 @@ MySQL local de XAMPP: `C:\xampp\mysql\bin\mysql.exe` (XAMPP trae MariaDB 10.4, *
 - Hay dos dumps con catálogos distintos: `BD/bd.sql` (hosting, MariaDB 11.8.9, base `u417714339_Lovemakeupbd` — valor por defecto de `DB_NAME`) y el dump local antiguo (base `lovemakeupbd1`). `DB_NAME` en `.env` debe coincidir con la base realmente importada; los ids del dump pueden no coincidir con el hosting.
 - Tras editar productos de la tienda **o** los campos auxiliares `tipo_piel`/`ingredientes_activos`, re-ejecutar `python seed.py reindex` (una llamada a OpenRouter por producto).
 - Solo se recomiendan productos con `estatus = 1` y `stock_disponible > 0`. No atribuir tipo de piel ni ingredientes que no estén en `angel_producto_ai`.
+- El filtro por `tipo_piel` es **opt-in**: con la columna NULL la fila pasa el SQL y la idoneidad la decide la similitud del vector (la descripción ya entra al embedding); solo las filas con dato curado restringen con `FIND_IN_SET`. El hosting no tiene ese dato en columna: curarlo a mano en `angel_producto_ai` activa el filtro fila por fila (luego `python seed.py reindex`, porque el texto del embedding cambia).
 
 ## Flujo de `/api/chat` (en este orden)
 
 1. `nlp.extraer_perfil` — reglas deterministas, sin LLM (usa los diccionarios `TIPOS_PIEL`, `NECESIDADES`, `CATEGORIAS`, `MARCAS`; amplíalos ahí, no con LLM).
 2. `llm.generar_embedding` — OpenRouter `EMBEDDING_MODEL` (por defecto `baai/bge-m3`), obligatorio para buscar.
-3. `db.buscar_productos` — filtros en SQL + `VEC_DISTANCE_COSINE` en la misma consulta (una de conteo previa detecta catálogo sin indexar).
+3. `db.buscar_productos` — filtros en SQL + `VEC_DISTANCE_COSINE` en la misma consulta (una de conteo previa detecta catálogo sin indexar). El filtro de `tipo_piel` es opt-in: filas con `tipo_piel` NULL pasan y decide el coseno.
 4. `llm.redactar_respuesta` — Qwen chat (`LLM_MODEL`) con timeout `LLM_TIMEOUT_SECONDS`; si falta la key o falla, cae a `_respuesta_plantilla` (comportamiento esperado, no un bug).
 
 ## Configuración y entornos
