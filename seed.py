@@ -1,7 +1,10 @@
 """Indexa el catálogo real de LoveMakeup para las recomendaciones de Ángel.
 
 Uso:
-    python seed.py reindex   -> recalcula los embeddings de productos activos
+    python seed.py reindex       -> recalcula los embeddings de productos activos
+    python seed.py conocimiento  -> recalcula los embeddings de las fichas de
+                                    angel_conocimiento (base de conocimiento
+                                    curada en phpMyAdmin)
 """
 import asyncio
 import sys
@@ -32,9 +35,29 @@ async def embed(texto: str) -> list[float]:
     return vector
 
 
+async def indexar_conocimiento(conn) -> None:
+    """Base de conocimiento: vectoriza tema+tipo+contenido de cada ficha activa."""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT id, tema, tipo, contenido FROM angel_conocimiento WHERE activo = 1"
+        )
+        fichas = await cur.fetchall()
+        if not fichas:
+            print("Sin fichas activas en angel_conocimiento (ejecuta BD/angel_chat.sql)")
+            return
+        for fid, tema, tipo, contenido in fichas:
+            texto = f"{tema}. {tipo}: {contenido}"
+            vector = await embed(texto)
+            await cur.execute(
+                "UPDATE angel_conocimiento SET embedding = VEC_FromText(%s) WHERE id = %s",
+                (embedding_a_texto(vector), fid),
+            )
+            print(f"Indexado: {tema}")
+
+
 async def main(modo: str) -> None:
-    if modo != "reindex":
-        raise ValueError("Modo no válido. Use: python seed.py reindex")
+    if modo not in ("reindex", "conocimiento"):
+        raise ValueError("Modo no válido. Use: python seed.py reindex | conocimiento")
     if client is None:
         raise RuntimeError("Falta OPENROUTER_API_KEY en la configuración")
 
@@ -48,6 +71,9 @@ async def main(modo: str) -> None:
         charset="utf8mb4",
     )
     try:
+        if modo == "conocimiento":
+            await indexar_conocimiento(conn)
+            return
         async with conn.cursor() as cur:
             await cur.execute(
                 """INSERT INTO angel_producto_ai (id_producto)

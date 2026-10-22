@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     vision_timeout_seconds: float = 15.0  # descripción de la imagen (tarda más)
     max_imagenes: int = 3
 
+    # Memoria de conversaciones y base de conocimiento
+    historial_prompt: int = 8        # turnos máx (ida+vuelta) en el prompt
+    historial_guardar: int = 50      # mensajes conservados por usuario
+    guardar_anon: bool = False       # invitados (sub anon_*) no se guardan
+    conocimiento_top: int = 3        # fichas internas inyectadas al prompt
+    conocimiento_distancia_max: float = 0.45  # umbral coseno para usar ficha
+
     cors_origins: str = "http://localhost,http://127.0.0.1"
 
 

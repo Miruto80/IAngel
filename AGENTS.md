@@ -15,6 +15,7 @@ uvicorn main:app --reload --port 8000        # servir; /health y /docs para veri
 pytest -v                                    # tests unitarios puros (sin BD ni red)
 pytest test_api.py::test_jwt_valido          # test individual
 python seed.py reindex                       # indexar embeddings (requiere BD MariaDB 11.7+ + OPENROUTER_API_KEY)
+python seed.py conocimiento                  # vectorizar las fichas de angel_conocimiento (BD/angel_chat.sql)
 python prueba_e2e.py                         # e2e contra el servidor local (401/422/chat con JWT RS256; no lo recoge pytest)
 ```
 
@@ -28,6 +29,7 @@ MariaDB local en la PC (Windows): el servicio **`MariaDB-Angel` (11.8.4, puerto 
 - El índice `VECTOR INDEX` está comentado en `schema.sql`: crearlo solo con el catálogo completo indexado.
 - Migración desde el esquema viejo (JSON/LONGTEXT): drop + add de la columna (comentada en `schema.sql`); la conversión directa no existe.
 - Hay dos dumps con catálogos distintos: `BD/bd.sql` (hosting, MariaDB 11.8.9, base `u417714339_Lovemakeupbd` — valor por defecto de `DB_NAME`) y el dump local antiguo (base `lovemakeupbd1`). `DB_NAME` en `.env` debe coincidir con la base realmente importada; los ids del dump pueden no coincidir con el hosting.
+- La memoria y la base de conocimiento viven en `BD/angel_chat.sql`: `angel_chat_mensaje` guarda los intercambios por `sub` (cédula del token real; `anon_*` NO se guarda — solo usuarios logueados), con retención `HISTORIAL_GUARDAR`; `angel_conocimiento` son fichas curadas (phpMyAdmin) que se vectorizan con `python seed.py conocimiento` y entran al prompt solo si el coseno queda bajo `CONOCIMIENTO_DISTANCIA_MAX`. Para crear las tablas hace falta el permiso CREATE (root/admin) y los GRANT están comentados en el SQL.
 - Tras editar productos de la tienda **o** los campos auxiliares `tipo_piel`/`ingredientes_activos`, re-ejecutar `python seed.py reindex` (una llamada a OpenRouter por producto).
 - Solo se recomiendan productos con `estatus = 1` y `stock_disponible > 0`. No atribuir tipo de piel ni ingredientes que no estén en `angel_producto_ai`.
 - El filtro por `tipo_piel` es **opt-in**: con la columna NULL la fila pasa el SQL y la idoneidad la decide la similitud del vector (la descripción ya entra al embedding); solo las filas con dato curado restringen con `FIND_IN_SET`. El hosting no tiene ese dato en columna: curarlo a mano en `angel_producto_ai` activa el filtro fila por fila (luego `python seed.py reindex`, porque el texto del embedding cambia).
@@ -38,7 +40,8 @@ MariaDB local en la PC (Windows): el servicio **`MariaDB-Angel` (11.8.4, puerto 
 1b. `llm.describir_imagen` — si el cliente envió fotos: las describe con el modelo multimodal y refuerza el perfil; la descripción también entra a `texto_para_embedding`.
 2. `llm.generar_embedding` — OpenRouter `EMBEDDING_MODEL` (por defecto `baai/bge-m3`), obligatorio para buscar.
 3. `db.buscar_productos` — filtros en SQL + `VEC_DISTANCE_COSINE` en la misma consulta (una de conteo previa detecta catálogo sin indexar). El filtro de `tipo_piel` es opt-in: filas con `tipo_piel` NULL pasan y decide el coseno.
-4. `llm.redactar_respuesta` — Qwen chat (`LLM_MODEL`) con timeout `LLM_TIMEOUT_SECONDS`; si falta la key o falla, cae a `_respuesta_plantilla` (comportamiento esperado, no un bug).
+4. `llm.redactar_respuesta` — Qwen chat (`LLM_MODEL`) con timeout `LLM_TIMEOUT_SECONDS`; el prompt lleva mensaje + perfil + (descripción de la foto) + conversación reciente (`HISTORIAL_PROMPT` turnos de `angel_chat_mensaje`, sub = cédula o `anon_*`) + fichas internas de `angel_conocimiento` (coseno ≤ `CONOCIMIENTO_DISTANCIA_MAX`) + productos reales. Si falta la key o falla, cae a `_respuesta_plantilla` (comportamiento esperado, no un bug).
+5. `db.guardar_conversacion` — best-effort tras responder: guarda mensaje + respuesta y recorta el histórico (`HISTORIAL_GUARDAR`); invitados (`anon_*`) no se guardan.
 
 ## Configuración y entornos
 

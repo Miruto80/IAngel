@@ -8,7 +8,7 @@ import json
 import aiomysql
 
 from config import get_settings
-from schemas import PerfilDetectado, Producto
+from schemas import MensajeHistorial, PerfilDetectado, Producto
 
 _pool: aiomysql.Pool | None = None
 
@@ -154,4 +154,83 @@ async def buscar_productos(
             ingredientes_activos=f["ingredientes_activos"],
         )
         for f in filas
+    ]
+
+
+async def leer_conversacion(usuario: str, limite: int = 8) -> list[MensajeHistorial]:
+    """Memoria: últimos `limite` turnos (ida+vuelta) en orden cronológico."""
+    if _pool is None:
+        raise RuntimeError("El pool de base de datos no está inicializado")
+    async with _pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute(
+                """SELECT rol, contenido FROM angel_chat_mensaje
+                   WHERE usuario = %s
+                   ORDER BY id DESC LIMIT %s""",
+                (usuario, limite * 2),
+            )
+            filas = list(reversed(await cur.fetchall()))
+    return [MensajeHistorial(rol=f["rol"], contenido=f["contenido"]) for f in filas]
+
+
+async def guardar_conversacion(usuario: str, turnos: list[tuple[str, str]]) -> None:
+    """Persiste los turnos nuevos y recorta el histórico hasta HISTORIAL_GUARDAR.
+
+    autocommit=True en el pool: sin transacciones explícitas. La eliminación
+    conserva los `historial_guardar` mensajes más recientes del usuario.
+    """
+    if _pool is None or not turnos:
+        return
+    async with _pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            for rol, contenido in turnos:
+                await cur.execute(
+                    "INSERT INTO angel_chat_mensaje (usuario, rol, contenido) VALUES (%s, %s, %s)",
+                    (usuario, rol, contenido[:1000]),
+                )
+            await cur.execute(
+                """DELETE m FROM angel_chat_mensaje m
+                   LEFT JOIN (SELECT id FROM angel_chat_mensaje
+                              WHERE usuario = %s ORDER BY id DESC LIMIT %s) keep
+                     ON m.id = keep.id
+                   WHERE m.usuario = %s AND keep.id IS NULL""",
+                (usuario, get_settings().historial_guardar, usuario),
+            )
+
+
+async def buscar_conocimiento(
+    vec: list[float], limite: int | None = None, distancia_max: float | None = None
+) -> list[tuple[str, str, str]]:
+    """Base de conocimiento: fichas internas más similares (coseno).
+
+    Solo filas activas con embedding (lo llena seed.py). `limite` y umbral de
+    distancia vienen de config (CONOCIMIENTO_TOP / CONOCIMIENTO_DISTANCIA_MAX);
+    si una ficha queda lejos, se descarta y no contamina el prompt.
+    """
+    if _pool is None:
+        raise RuntimeError("El pool de base de datos no está inicializado")
+    s = get_settings()
+    if len(vec) != s.embedding_dim:
+        raise ValueError(
+            f"Se esperaba un embedding de {s.embedding_dim} dimensiones; recibido: {len(vec)}"
+        )
+    limite = limite if limite is not None else s.conocimiento_top
+    distancia_max = distancia_max if distancia_max is not None else s.conocimiento_distancia_max
+
+    async with _pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute(
+                """SELECT tema, tipo, contenido,
+                          VEC_DISTANCE_COSINE(embedding, VEC_FromText(%s)) AS distancia
+                   FROM angel_conocimiento
+                   WHERE activo = 1 AND embedding IS NOT NULL
+                   ORDER BY distancia ASC
+                   LIMIT %s""",
+                (embedding_a_texto(vec), limite),
+            )
+            filas = await cur.fetchall()
+    return [
+        (f["tema"], f["tipo"], f["contenido"])
+        for f in filas
+        if float(f["distancia"]) <= distancia_max
     ]

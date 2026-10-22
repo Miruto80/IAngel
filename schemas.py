@@ -1,15 +1,31 @@
 """Esquemas de la API de Ángel: validación de entrada y salida (RF-01/RF-03)."""
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 MAX_IMAGENES = 3
 IMAGEN_MAX_CARACTERES = 4_000_000  # ~3 MB por imagen en base64
 
+MAX_HISTORIAL_TURNOS = 16  # 8 ida y vuelta; demás lo recorta el widget
+MENSAJE_HISTORIAL_MAX = 1000
+
+_ROLES = {"user": "usuario", "assistant": "asistente",
+          "usuario": "usuario", "asistente": "asistente"}
+
+
+class MensajeHistorial(BaseModel):
+    """Un turno de conversación guardado en la memoria del usuario."""
+    rol: Literal["usuario", "asistente"]
+    contenido: str = Field(..., min_length=1, max_length=MENSAJE_HISTORIAL_MAX)
+
 
 class ConsultaChat(BaseModel):
-    # Valida "datos vacíos o incorrectos" (diagrama de actividades)
     mensaje: str = Field(..., min_length=2, max_length=500)
-    # Fase de visión: data URLs base64 de fotos del cliente (opcional)
+    # Visión: data URLs base64 (opcional)
     imagenes: list[str] | None = None
+    # Memoria: turnos previos (opcional). El widget envía {role, content};
+    # se normaliza a {rol, contenido} para hablar el idioma de la BD.
+    historial: list[MensajeHistorial] | None = None
 
     @field_validator("imagenes")
     @classmethod
@@ -24,6 +40,27 @@ class ConsultaChat(BaseModel):
             if len(imagen) > IMAGEN_MAX_CARACTERES:
                 raise ValueError("Una imagen excede el tamaño máximo (3 MB)")
         return valor
+
+    @field_validator("historial", mode="before")
+    @classmethod
+    def _normalizar_historial(cls, valor):
+        # Acepta {role, content} (widget), {rol, contenido} (BD) y objetos ya
+        # validados; degrada a None si viene vacío.
+        if not valor:
+            return None
+        normalizado = []
+        for item in valor:
+            if isinstance(item, dict):
+                rol = _ROLES.get(item.get("rol") or item.get("role") or "")
+                normalizado.append({
+                    "rol": rol,
+                    "contenido": item.get("contenido") or item.get("content"),
+                })
+            else:
+                normalizado.append(item)
+        if len(normalizado) > MAX_HISTORIAL_TURNOS:
+            raise ValueError(f"El historial admite como máximo {MAX_HISTORIAL_TURNOS} turnos")
+        return normalizado
 
 
 class Producto(BaseModel):

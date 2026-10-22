@@ -15,7 +15,7 @@ from auth import verificar_token
 from config import get_settings
 from llm import describir_imagen, generar_embedding, redactar_respuesta
 from nlp import extraer_perfil, texto_para_embedding
-from schemas import ConsultaChat, RespuestaChat
+from schemas import ConsultaChat, MensajeHistorial, RespuestaChat
 
 log = logging.getLogger("angel")
 logging.basicConfig(level=logging.INFO)
@@ -49,8 +49,12 @@ async def health():
 
 
 @app.post("/api/chat", response_model=RespuestaChat)
-async def chat(consulta: ConsultaChat, _usuario: dict = Depends(verificar_token)):
+async def chat(consulta: ConsultaChat, usuario_payload: dict = Depends(verificar_token)):
     t0 = time.perf_counter()
+
+    # Identidad real (memoria por usuario): sub del token. Invitados = anon_*
+    usuario = (usuario_payload or {}).get("sub") or ""
+    es_anonimo = usuario.startswith("anon")
 
     mensaje = consulta.mensaje.strip()
     if not mensaje:
@@ -58,6 +62,17 @@ async def chat(consulta: ConsultaChat, _usuario: dict = Depends(verificar_token)
 
     # 1) PLN: perfil del usuario (RF-01)
     perfil = extraer_perfil(mensaje)
+
+    # 1a) Memoria: historial del usuario desde la BD; respaldo con el que
+    #     mandó el widget si la memoria aún no existe.
+    historial: list[MensajeHistorial] = []
+    if usuario and not es_anonimo:
+        try:
+            historial = await db.leer_conversacion(usuario, get_settings().historial_prompt)
+        except Exception:
+            log.exception("No se pudo leer la memoria del usuario; sigue sin memoria")
+    if not historial and consulta.historial:
+        historial = consulta.historial
 
     # 1b) Fase de visión: describir la(s) foto(s) si el cliente envió imágenes.
     #     La descripción es texto: entra al perfil, al embedding y al prompt.
@@ -85,8 +100,27 @@ async def chat(consulta: ConsultaChat, _usuario: dict = Depends(verificar_token)
         log.error("%s", e)
         raise HTTPException(503, str(e)) from e
 
+    # 3b) Base de conocimiento: fichas internas afines a la consulta
+    try:
+        fichas = await db.buscar_conocimiento(vec)
+    except Exception:
+        log.exception("No se pudo buscar en la base de conocimiento")
+        fichas = []
+
     # 4) Redacción de la respuesta con datos reales
-    texto = await redactar_respuesta(mensaje, perfil, productos, descripcion_foto)
+    texto = await redactar_respuesta(
+        mensaje, perfil, productos, descripcion_foto, historial, fichas
+    )
+
+    # 5) Memoria: guardar el intercambio (best-effort; solo usuarios reales)
+    if usuario and not es_anonimo:
+        try:
+            await db.guardar_conversacion(
+                usuario,
+                [("usuario", mensaje[:1000]), ("asistente", texto[:1000])],
+            )
+        except Exception:
+            log.exception("No se pudo guardar la conversación en memoria")
 
     log.info("chat atendido en %.0f ms", (time.perf_counter() - t0) * 1000)
     return RespuestaChat(respuesta=texto, perfil=perfil, productos=productos)

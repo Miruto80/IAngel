@@ -27,11 +27,13 @@ import jwt  # noqa: E402
 import pytest  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 from fastapi.security import HTTPAuthorizationCredentials  # noqa: E402
+from pydantic import ValidationError  # noqa: E402
 
 from auth import verificar_token  # noqa: E402
 from config import get_settings  # noqa: E402
 from db import embedding_a_texto  # noqa: E402
 from nlp import extraer_perfil  # noqa: E402
+from schemas import ConsultaChat  # noqa: E402
 
 
 def _cred(token: str):
@@ -81,3 +83,21 @@ def test_embedding_a_texto_exige_la_dimension_configurada():
     dim = get_settings().embedding_dim
     with pytest.raises(ValueError, match=str(dim)):
         embedding_a_texto([0.1])
+
+
+def test_historial_acepta_formato_del_widget():
+    c = ConsultaChat(
+        mensaje="buenas",
+        historial=[
+            {"role": "user", "content": "hola"},
+            {"role": "assistant", "content": "¿qué buscas hoy?"},
+        ],
+    )
+    assert c.historial[0].rol == "usuario"
+    assert c.historial[1].rol == "asistente"
+
+
+def test_historial_rechaza_demasiados_turnos():
+    muchos = [{"role": "user", "content": f"m{i}"} for i in range(20)]
+    with pytest.raises(ValidationError):
+        ConsultaChat(mensaje="buenas", historial=muchos)

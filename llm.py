@@ -26,6 +26,8 @@ Reglas estrictas:
 - Usa los precios exactos de la lista (en USD).
 - Presenta las recomendaciones con saltos de línea y sin formato Markdown ni asteriscos.
 - Explica brevemente por qué cada producto encaja con el tipo de piel o necesidad del cliente.
+- Si incluyo una conversación reciente, continúa el hilo con naturalidad: no repitas saludos ni respuestas anteriores.
+- Si te doy fichas internas de la tienda, úsalas solo si encajan con la pregunta: no las cites literalmente y no inventes otras.
 - Si la lista está vacía, dilo con amabilidad y sugiere ajustar presupuesto, categoría o tipo de piel.
 - Si el cliente tiene condiciones de piel serias (dermatitis, alergias fuertes), sugiere consultar a un dermatólogo."""
 
@@ -86,6 +88,8 @@ async def redactar_respuesta(
     perfil: PerfilDetectado,
     productos: list[Producto],
     descripcion_foto: str = "",
+    historial: list | None = None,
+    fichas: list[tuple[str, str, str]] | None = None,
 ) -> str:
     if _client is None:
         return _respuesta_plantilla(productos)
@@ -96,12 +100,20 @@ async def redactar_respuesta(
         for p in productos
     ) or "(sin resultados)"
 
-    contenido = (
-        f"Mensaje del cliente: {mensaje}\n"
-        f"Perfil detectado: {perfil.model_dump_json()}\n"
-        + (f"Descripción de la foto enviada por el cliente: {descripcion_foto}\n" if descripcion_foto else "")
-        + f"Productos disponibles:\n{catalogo}"
-    )
+    secciones = [
+        f"Mensaje del cliente: {mensaje}",
+        f"Perfil detectado: {perfil.model_dump_json()}",
+    ]
+    if descripcion_foto:
+        secciones.append(f"Descripción de la foto enviada por el cliente: {descripcion_foto}")
+    if historial:
+        hilos = "\n".join(f"- {h.rol}: {h.contenido}" for h in historial)
+        secciones.append(f"Conversación reciente con el cliente:\n{hilos}")
+    if fichas:
+        datos = "\n".join(f"- {tema} ({tipo}): {contenido}" for tema, tipo, contenido in fichas)
+        secciones.append(f"Fichas internas de la tienda:\n{datos}")
+    secciones.append(f"Productos disponibles:\n{catalogo}")
+    contenido = "\n".join(secciones)
     try:
         r = await asyncio.wait_for(
             _client.chat.completions.create(

@@ -133,6 +133,26 @@ encabezado `Authorization: Bearer` a `/api/chat`, igual que hace con las demás
 APIs. En despliegues separados, usa la URL HTTPS pública del servicio y permite
 el origen de la tienda en `CORS_ORIGINS`.
 
+## Base de conocimiento y memoria del chat
+
+`BD/angel_chat.sql` (ejecutar en phpMyAdmin sobre la base que usa Ángel) crea
+dos tablas propias, sin alterar las tablas del sistema PHP:
+
+- `angel_conocimiento`: fichas curadas por el equipo (`tema`, `tipo`,
+  `contenido`). Se cargan a mano desde phpMyAdmin y se vectorizan con
+  `python seed.py conocimiento` (bge-m3, VECTOR(1024)). En cada consulta se
+  buscan las `CONOCIMIENTO_TOP` fichas más afines por coseno y solo entran al
+  prompt las que queden dentro de `CONOCIMIENTO_DISTANCIA_MAX`; si ninguna
+  encaja, no se inyecta nada. "Aprender" = fichas curadas + reindexar: el
+  modelo no se reentrena ni genera fichas nuevas.
+- `angel_chat_mensaje`: memoria por usuario. El sub del JWT identifica cada
+  conversación — la cédula cuando el cliente está logueado en la tienda
+  (`chat.php` firma con `$_SESSION['id']`) y `anon_*` para invitados. Ángel
+  inyecta los últimos `HISTORIAL_PROMPT` turnos al prompt, guarda el intercambio
+  (best-effort: si falla, el chat sigue) y recorta el histórico a
+  `HISTORIAL_GUARDAR` mensajes por usuario. Los invitados no se guardan
+  (`GUARDAR_ANON=false`).
+
 ## Alcance actual del catálogo
 
 El servicio toma precio de `producto.precio_detal`, disponibilidad de
