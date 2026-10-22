@@ -3,6 +3,7 @@
 > Congelación del estado al cerrar la sesión de integración en la VM (Ubuntu 26.04 en Termux proot).
 > Este archivo va versionado (no está en `.gitignore`): continúa desde la PC con este checklist.
 > **Actualización de la tarde (PC Windows)**: entorno local completo funcionando — ver "Hecho hoy".
+> **22-10 (VM)**: fase de visión en marcha — fotos en `/api/chat` con `qwen/qwen3-vl-30b-a3b-instruct` (un solo modelo multimodal para texto y fotos; la descripción entra al embedding `bge-m3` y al prompt). Pendiente e2e con fotos en la PC.
 
 ## Mapa rápido
 
@@ -30,6 +31,15 @@
   - `python seed.py reindex` → **57/57 productos activos indexados** (0 sin vector)
   - `GET /health` → `{"status":"ok"}`; e2e con JWT RS256 firmado por `prueba_e2e.py` (nuevo script, no lo recoje pytest): chat 200 con producto real (`Base Matte` $5.00 stock 39; labiales multi-producto con precios reales), **401 token basura y 422 mensaje corto verificados**
 - [x] **Decisión de diseño — filtro `tipo_piel` opt-in**: el hosting no tiene columna de tipo de piel; esa semántica vive en la descripción (que ya entra en el vector). `db.buscar_productos` ahora filtra solo filas con `tipo_piel` curado (`ai.tipo_piel IS NULL` pasa el filtro y decide el coseno). No se fabrican datos; la columna queda lista para cocción manual futura desde phpMyAdmin. `pytest` sigue 7/7
+- [x] **(22-10, VM) Fase de visión implementada**: `ConsultaChat.imagenes` (data URLs base64, máx. `MAX_IMAGENES=3`, ~3 MB c/u); `llm.describir_imagen` describe con el propio `LLM_MODEL` (`qwen/qwen3-vl-30b-a3b-instruct`: un solo modelo multimodal para texto y fotos) y la descripción entra al perfil, al embedding (`texto_para_embedding`) y al prompt de redacción. Si la visión falla o tarda (`VISION_TIMEOUT_SECONDS=15`), el flujo sigue con solo texto (nunca 502 por una foto). Manejo de rostro: solo rasgos de piel visibles, sin identificar personas ni diagnósticos. `pytest` 7/7; llamada de visión validada en vivo contra OpenRouter. El widget `chat.php` ahora SÍ envía las imágenes (canvas máx 1024px + JPEG 0.85, limpieza tras enviar, badge con el contador, texto por defecto si van solo fotos); `prueba_e2e.py` soporta `imagen ruta.jpg`. Pendiente: e2e completo con foto en la PC (ítem 5 del plan PC)
+
+## 🔜 Pendiente priorizado — para hacer en la PC
+
+- [ ] **1. Widget de punta a punta**: `git clone` de `Lovemakeup-3.0` en la PC + `passconfig.env` (`ANGEL_API_URL`, `ANGEL_PRIVATE_KEY_PATH=config/jwt_private.pem`) + par de llaves + tienda en XAMPP (Apache/PHP; la 10.x sirve: VECTOR solo lo necesita Ángel) → probar el chat real en el navegador, texto y con foto
+- [ ] **2. Decisión de despliegue**: dónde correrá Ángel en producción (¿hosting con Passenger? ¿VPS?) — de esto salen `CORS_ORIGINS`, `ANGEL_API_URL` público y el hosting de las llaves
+- [ ] **3. Uniformar llaves al desplegar**: en el hosting colocar `config/jwt_private.pem` **y** `config/jwt_public.pem` del mismo par **a la vez** (si no, los logins fallarían; tokens de 1 h → ventana sin impacto). El par del PC es de PRUEBA; el "par A real" está en la VM (`ai_*.pem` de Download)
+- [ ] **4. (Opcional) MariaDB en la VM**: quedó rota (`mariadb-server` en estado `iHR`, datadir vacío); solo si se quiere dev desde el teléfono — la BD real de desarrollo vive en la PC (`MariaDB-Angel`, 11.8.4, puerto 23307)
+- [ ] **5. e2e con fotos en la PC**: `python prueba_e2e.py imagen ruta.jpg` contra el servidor local, una vez integrada la fase de visión ítems de abajo
 
 ## 🔜 Pendiente — IAngel / entornos
 
@@ -40,7 +50,7 @@
 
 ## 🔜 Pendiente — Lovemakeup-3.0 (PHP)
 
-- [ ] **1. Commitear la pública del par A**: HEAD de `Local` aún tiene el par B antiguo (`7ab5ba…`); el disco ya trae el par A (`ad7190…` = idéntico a `IAngel/ai_public.pem`). Commit: `config/jwt_public.pem` (+ este archivo y `.gitignore` ya ajustado)
+- [x] **1. Commitear la pública del par A — HECHO**: commit `1f55e7f` empujado a `origin/Local` desde la VM; HEAD y disco ya son par A (`ad7190…` = `IAngel/ai_public.pem`). En la PC basta `git pull`
 - [ ] **2. `passconfig.env` LOCAL** (gitignored, no viene en el clon):
   ```dotenv
   ANGEL_API_URL=http://127.0.0.1:8000/api/chat

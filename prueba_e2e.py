@@ -1,15 +1,17 @@
-"""Prueba e2e local contra el servidor de Ángel.
+"""Prueba e2e local contra el servidor de Ángel (texto y fotos).
 
 Uso (PowerShell, desde la carpeta del repo con el venv activo):
 
-    venv\\Scripts\\python.exe prueba_e2e.py                 # mensaje típico de prueba
-    venv\\Scripts\\python.exe prueba_e2e.py 401             # token basura -> 401
-    venv\\Scripts\\python.exe prueba_e2e.py 422             # mensaje vacío -> 422
+    venv\\Scripts\\python.exe prueba_e2e.py                     # mensaje típico de prueba
+    venv\\Scripts\\python.exe prueba_e2e.py 401                 # token basura -> 401
+    venv\\Scripts\\python.exe prueba_e2e.py 422                 # mensaje vacío -> 422
     venv\\Scripts\\python.exe prueba_e2e.py "otro mensaje"
+    venv\\Scripts\\python.exe prueba_e2e.py imagen foto.jpg     # fase de visión (foto)
 
-Firma el token igual que issue_jwt.php: RS256 con la privada del par,
+Firma el token igual que issue_jwt.php/chat.php: RS256 con la privada del par,
 payload {sub, iat, exp} de 1 h de vida.
 """
+import base64
 import json
 import sys
 import time
@@ -52,6 +54,21 @@ def main() -> None:
 
     if caso == "422":
         r = httpx.post(URL, json={"mensaje": ""}, headers=cabeceras, timeout=30)
+        mostrar(r)
+        return
+
+    if caso == "imagen":
+        if len(sys.argv) < 3:
+            print("Uso: python prueba_e2e.py imagen ruta.jpg")
+            return
+        with open(sys.argv[2], "rb") as f:
+            data = "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
+        r = httpx.post(
+            URL,
+            json={"mensaje": "Según lo que ves, ¿qué me recomiendas?", "imagenes": [data]},
+            headers=cabeceras,
+            timeout=120,
+        )
         mostrar(r)
         return
 

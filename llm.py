@@ -37,6 +37,39 @@ async def generar_embedding(texto: str) -> list[float]:
     return r.data[0].embedding
 
 
+PROMPT_VISION = """Mira la imagen que envió el cliente de la tienda de cosméticos LoveMakeup.
+- Si es un producto de belleza: describe en máximo 60 palabras el tipo, el color o acabado y a qué tipo de piel le conviene.
+- Si es un rostro: describe solo rasgos visibles de la piel (brillo, acné, rojeces, textura, zonas afectadas) y el tipo de piel aparente. No identifiques a la persona ni des diagnósticos clínicos.
+- Si es otra cosa: describe brevemente lo que ayude a recomendar productos de belleza.
+Responde solo con la descripción, en español, sin Markdown ni listas."""
+
+
+async def describir_imagen(imagenes: list[str], mensaje: str) -> str:
+    """Fase de visión: describe la(s) foto(s) del cliente con el modelo multimodal.
+
+    La descripción enriquece el embedding (los vectores guardados son de TEXTO,
+    no se pueden comparar contra una imagen cruda) y el prompt de redacción.
+    Si el modelo falla o tarda, devuelve cadena vacía y el flujo continúa como
+    si solo hubiera texto: la foto es un extra, no un requisito.
+    """
+    if _client is None:
+        raise RuntimeError("Falta OPENROUTER_API_KEY")
+    contenido: list[dict] = [
+        {"type": "text", "text": f"Mensaje del cliente: {mensaje}\n{PROMPT_VISION}"}
+    ]
+    for data_url in imagenes[: _s.max_imagenes]:
+        contenido.append({"type": "image_url", "image_url": {"url": data_url}})
+    r = await asyncio.wait_for(
+        _client.chat.completions.create(
+            model=_s.llm_model,
+            max_tokens=160,
+            messages=[{"role": "user", "content": contenido}],
+        ),
+        timeout=_s.vision_timeout_seconds,
+    )
+    return (r.choices[0].message.content or "").strip()
+
+
 def _respuesta_plantilla(productos: list[Producto]) -> str:
     """Respaldo determinista si el LLM falla o tarda demasiado (RNF-01)."""
     if not productos:
@@ -49,7 +82,10 @@ def _respuesta_plantilla(productos: list[Producto]) -> str:
 
 
 async def redactar_respuesta(
-    mensaje: str, perfil: PerfilDetectado, productos: list[Producto]
+    mensaje: str,
+    perfil: PerfilDetectado,
+    productos: list[Producto],
+    descripcion_foto: str = "",
 ) -> str:
     if _client is None:
         return _respuesta_plantilla(productos)
@@ -63,7 +99,8 @@ async def redactar_respuesta(
     contenido = (
         f"Mensaje del cliente: {mensaje}\n"
         f"Perfil detectado: {perfil.model_dump_json()}\n"
-        f"Productos disponibles:\n{catalogo}"
+        + (f"Descripción de la foto enviada por el cliente: {descripcion_foto}\n" if descripcion_foto else "")
+        + f"Productos disponibles:\n{catalogo}"
     )
     try:
         r = await asyncio.wait_for(

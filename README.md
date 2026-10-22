@@ -110,9 +110,13 @@ uvicorn main:app --reload --port 8000
 
 Toda la IA pasa por OpenRouter con una única `OPENROUTER_API_KEY`: los
 embeddings usan `EMBEDDING_MODEL` (por defecto `baai/bge-m3`, 1024 dimensiones)
-y la redacción un modelo de chat de Qwen (`LLM_MODEL`, por defecto
-`qwen/qwen3-30b-a3b-instruct-2507`). Si la key no está configurada o el modelo
-tarda más de `LLM_TIMEOUT_SECONDS`, se utiliza una respuesta de plantilla.
+y la redacción un modelo multimodal de Qwen (`LLM_MODEL`, por defecto
+`qwen/qwen3-vl-30b-a3b-instruct`: texto y fotos). Con fotos en `/api/chat`,
+`llm.describir_imagen` las interpreta primero (producto o rostro, máximo
+`MAX_IMAGENES`, timeout `VISION_TIMEOUT_SECONDS`) y esa descripción entra al
+perfil, al embedding y al prompt; si la visión falla, el chat continúa como
+texto. Si la key no está configurada o el modelo tarda más de
+`LLM_TIMEOUT_SECONDS`, se utiliza una respuesta de plantilla.
 
 En producción, usa HTTPS detrás de nginx/Caddy, limita `CORS_ORIGINS` al origen
 de LoveMakeup y no expongas el puerto de MariaDB ni el secreto JWT.

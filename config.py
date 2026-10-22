@@ -25,14 +25,17 @@ class Settings(BaseSettings):
     jwt_secret: str = ""  # solo para el modo legado HS256
 
     # Toda la IA pasa por OpenRouter con un único cliente compatible con OpenAI:
-    # embeddings (baai/bge-m3, 1024 dims nativas) y redacción (chat de Qwen).
+    # embeddings (baai/bge-m3, 1024 dims nativas) y un modelo multimodal de chat
+    # de Qwen (texto y fotos, qwen3-vl).
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     embedding_model: str = "baai/bge-m3"
     embedding_dim: int = 1024  # debe coincidir con EMBEDDING_MODEL y con VECTOR(N)
 
-    llm_model: str = "qwen/qwen3-30b-a3b-instruct-2507"
-    llm_timeout_seconds: float = 6.0
+    llm_model: str = "qwen/qwen3-vl-30b-a3b-instruct"
+    llm_timeout_seconds: float = 6.0  # redacción con texto
+    vision_timeout_seconds: float = 15.0  # descripción de la imagen (tarda más)
+    max_imagenes: int = 3
 
     cors_origins: str = "http://localhost,http://127.0.0.1"
 

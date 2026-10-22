@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import db
 from auth import verificar_token
 from config import get_settings
-from llm import generar_embedding, redactar_respuesta
+from llm import describir_imagen, generar_embedding, redactar_respuesta
 from nlp import extraer_perfil, texto_para_embedding
 from schemas import ConsultaChat, RespuestaChat
 
@@ -59,9 +59,21 @@ async def chat(consulta: ConsultaChat, _usuario: dict = Depends(verificar_token)
     # 1) PLN: perfil del usuario (RF-01)
     perfil = extraer_perfil(mensaje)
 
+    # 1b) Fase de visión: describir la(s) foto(s) si el cliente envió imágenes.
+    #     La descripción es texto: entra al perfil, al embedding y al prompt.
+    descripcion_foto = ""
+    if consulta.imagenes:
+        try:
+            descripcion_foto = await describir_imagen(consulta.imagenes, mensaje)
+            if descripcion_foto:
+                perfil = extraer_perfil(mensaje + " " + descripcion_foto)
+                log.info("Visión: %s", descripcion_foto[:120])
+        except Exception:
+            log.exception("Fase de visión falló; continúa solo con texto")
+
     # 2) Embedding de la consulta
     try:
-        vec = await generar_embedding(texto_para_embedding(mensaje, perfil))
+        vec = await generar_embedding(texto_para_embedding(mensaje, perfil, descripcion_foto))
     except Exception as e:
         log.exception("Error generando embedding")
         raise HTTPException(502, "Error en el servicio de IA") from e
@@ -74,7 +86,7 @@ async def chat(consulta: ConsultaChat, _usuario: dict = Depends(verificar_token)
         raise HTTPException(503, str(e)) from e
 
     # 4) Redacción de la respuesta con datos reales
-    texto = await redactar_respuesta(mensaje, perfil, productos)
+    texto = await redactar_respuesta(mensaje, perfil, productos, descripcion_foto)
 
     log.info("chat atendido en %.0f ms", (time.perf_counter() - t0) * 1000)
     return RespuestaChat(respuesta=texto, perfil=perfil, productos=productos)

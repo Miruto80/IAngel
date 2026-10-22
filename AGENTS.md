@@ -2,7 +2,7 @@
 
 FastAPI + MariaDB 11.7+. Estructura plana de módulos: se ejecuta **desde esta carpeta** (no hay paquete ni `pyproject.toml`). Todo el repo está en **español** (comentarios, docstrings, errores de API, `SYSTEM_PROMPT`): mantén ese idioma en el código.
 
-**IA vía OpenRouter** (una sola `OPENROUTER_API_KEY`, cliente del SDK `openai` con `base_url`): embeddings con `baai/bge-m3` (1024 dims, multilingüe; `qwen/qwen3-embedding-0.6b` ya no tiene endpoints en OpenRouter: no lo uses) y redacción con Qwen chat (`LLM_MODEL`). No hay SDK de OpenAI ni Anthropic propios; no los reintroduzcas.
+**IA vía OpenRouter** (una sola `OPENROUTER_API_KEY`, cliente del SDK `openai` con `base_url`): embeddings con `baai/bge-m3` (1024 dims, multilingüe; `qwen/qwen3-embedding-0.6b` ya no tiene endpoints en OpenRouter: no lo uses) y redacción con Qwen chat **multimodal** (`LLM_MODEL`, por defecto `qwen/qwen3-vl-30b-a3b-instruct`: redacta texto y describe fotos). No hay SDK de OpenAI ni Anthropic propios; no los reintroduzcas.
 
 ## Comandos
 
@@ -35,6 +35,7 @@ MariaDB local en la PC (Windows): el servicio **`MariaDB-Angel` (11.8.4, puerto 
 ## Flujo de `/api/chat` (en este orden)
 
 1. `nlp.extraer_perfil` — reglas deterministas, sin LLM (usa los diccionarios `TIPOS_PIEL`, `NECESIDADES`, `CATEGORIAS`, `MARCAS`; amplíalos ahí, no con LLM).
+1b. `llm.describir_imagen` — si el cliente envió fotos: las describe con el modelo multimodal y refuerza el perfil; la descripción también entra a `texto_para_embedding`.
 2. `llm.generar_embedding` — OpenRouter `EMBEDDING_MODEL` (por defecto `baai/bge-m3`), obligatorio para buscar.
 3. `db.buscar_productos` — filtros en SQL + `VEC_DISTANCE_COSINE` en la misma consulta (una de conteo previa detecta catálogo sin indexar). El filtro de `tipo_piel` es opt-in: filas con `tipo_piel` NULL pasan y decide el coseno.
 4. `llm.redactar_respuesta` — Qwen chat (`LLM_MODEL`) con timeout `LLM_TIMEOUT_SECONDS`; si falta la key o falla, cae a `_respuesta_plantilla` (comportamiento esperado, no un bug).
@@ -43,7 +44,8 @@ MariaDB local en la PC (Windows): el servicio **`MariaDB-Angel` (11.8.4, puerto 
 
 - `.env` se carga con pydantic-settings; con `JWT_ALGORITHM=RS256` (por defecto) la app no arranca sin `JWT_PUBLIC_KEY`; el modo legado HS256 exige `JWT_SECRET`. `config.get_settings` y el cliente de `llm.py` se crean a nivel de módulo / con `lru_cache`: **los cambios de `.env` requieren reiniciar el proceso**.
 - El PHP ya firma **RS256** con `Lovemakeup-3.0/config/jwt_private.pem` y sus APIs verifican con `config/jwt_public.pem` (mismo par; `login.php`, `issue_jwt.php`, `producto.php`, etc.). Python solo verifica: `JWT_PUBLIC_KEY` debe apuntar al PEM público de ese mismo par (`ai_public.pem` es copia de `config/jwt_public.pem`, mantenlas idénticas). No hay secreto compartido con `passconfig.env`; `chat_widget.js` de aquí es solo ejemplo de cliente y el widget `chat.php` no está committeado en el repo PHP.
-- OpenRouter es la única puerta de IA. Fase 2 pendiente (no implementada): visión con Qwen-VL (el cliente enviaría una foto en `/api/chat`); Qwen3-Embedding es solo texto.
+- La fase de visión está **implementada** (22-10-2026): el widget envía `imagenes` (data URLs base64, máx. `MAX_IMAGENES`) en `ConsultaChat`; `llm.describir_imagen` las interpreta con el propio `LLM_MODEL` y la descripción entra al perfil, al embedding (`texto_para_embedding`) y al prompt de redacción. Si la visión falla o tarda, `/api/chat` continúa con solo texto (nunca 502 por una foto). En fotos de rostro: describir solo rasgos de piel visibles, sin identificar personas ni dar diagnósticos.
+- OpenRouter es la única puerta de IA. El embedding es solo texto: ante una foto siempre hay una descripción textual antes de calcular el vector.
 
 ## Verificación
 

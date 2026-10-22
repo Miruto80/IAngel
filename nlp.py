@@ -86,10 +86,13 @@ def extraer_perfil(mensaje: str) -> PerfilDetectado:
     )
 
 
-def texto_para_embedding(mensaje: str, perfil: PerfilDetectado) -> str:
-    """Enriquece la consulta con el perfil para mejorar la búsqueda semántica."""
+def texto_para_embedding(mensaje: str, perfil: PerfilDetectado, descripcion_foto: str = "") -> str:
+    """Enriquece la consulta con el perfil y, si la hay, la descripción de la foto."""
     extra = []
     if perfil.tipo_piel:
         extra.append(f"piel {perfil.tipo_piel}")
     extra.extend(perfil.necesidades)
-    return mensaje + (". " + ", ".join(extra) if extra else "")
+    texto = mensaje + (". " + ", ".join(extra) if extra else "")
+    # Los embeddings guardados SON de texto (bge-m3): la imagen se compara vía
+    # su descripción textual (fase de visión), nunca como imagen cruda.
+    return texto + (". " + descripcion_foto if descripcion_foto else "")
