@@ -61,7 +61,7 @@ async def describir_imagen(imagenes: list[str], mensaje: str) -> str:
         contenido.append({"type": "image_url", "image_url": {"url": data_url}})
     r = await asyncio.wait_for(
         _client.chat.completions.create(
-            model=_s.llm_model,
+            model=_s.vision_model or _s.llm_model,
             max_tokens=160,
             messages=[{"role": "user", "content": contenido}],
         ),

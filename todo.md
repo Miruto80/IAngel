@@ -40,6 +40,7 @@
 - [ ] **3. Uniformar llaves al desplegar**: en el hosting colocar `config/jwt_private.pem` **y** `config/jwt_public.pem` del mismo par **a la vez** (si no, los logins fallarían; tokens de 1 h → ventana sin impacto). El par del PC es de PRUEBA; el "par A real" está en la VM (`ai_*.pem` de Download)
 - [ ] **4. (Opcional) MariaDB en la VM**: quedó rota (`mariadb-server` en estado `iHR`, datadir vacío); solo si se quiere dev desde el teléfono — la BD real de desarrollo vive en la PC (`MariaDB-Angel`, 11.8.4, puerto 23307)
 - [ ] **5. e2e con fotos en la PC**: `python prueba_e2e.py imagen ruta.jpg` contra el servidor local, una vez integrada la fase de visión ítems de abajo
+- [ ] **6. (Ya identificado) .env de la PC desactualizado**: el 22-10 la visión falló con `404 - No endpoints found that support image input` porque la PC dejaron `LLM_MODEL` en el modelo SOLO-TEXTO (`qwen3-30b-a3b-instruct-2507`); el fallback funcionó (200 en 3.4s). Corregir: `LLM_MODEL=qwen/qwen3-vl-30b-a3b-instruct` en `.env` **y reiniciar uvicorn**. No volver a este error: el código ahora soporta `VISION_MODEL` opcional para apuntar la visión a su propio modelo VL aunque el LLM sea de texto
 
 ## 🔜 Pendiente — IAngel / entornos
 

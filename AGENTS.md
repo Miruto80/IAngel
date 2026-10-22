@@ -2,7 +2,7 @@
 
 FastAPI + MariaDB 11.7+. Estructura plana de módulos: se ejecuta **desde esta carpeta** (no hay paquete ni `pyproject.toml`). Todo el repo está en **español** (comentarios, docstrings, errores de API, `SYSTEM_PROMPT`): mantén ese idioma en el código.
 
-**IA vía OpenRouter** (una sola `OPENROUTER_API_KEY`, cliente del SDK `openai` con `base_url`): embeddings con `baai/bge-m3` (1024 dims, multilingüe; `qwen/qwen3-embedding-0.6b` ya no tiene endpoints en OpenRouter: no lo uses) y redacción con Qwen chat **multimodal** (`LLM_MODEL`, por defecto `qwen/qwen3-vl-30b-a3b-instruct`: redacta texto y describe fotos). No hay SDK de OpenAI ni Anthropic propios; no los reintroduzcas.
+**IA vía OpenRouter** (una sola `OPENROUTER_API_KEY`, cliente del SDK `openai` con `base_url`): embeddings con `baai/bge-m3` (1024 dims, multilingüe; `qwen/qwen3-embedding-0.6b` ya no tiene endpoints en OpenRouter: no lo uses) y redacción con Qwen chat **multimodal** (`LLM_MODEL`, por defecto `qwen/qwen3-vl-30b-a3b-instruct`: redacta texto y describe fotos). `VISION_MODEL` es opcional: dedica un modelo VL aparte a la visión si `LLM_MODEL` quedara en uno solo-texto. No hay SDK de OpenAI ni Anthropic propios; no los reintroduzcas.
 
 ## Comandos
 

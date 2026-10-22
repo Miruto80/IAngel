@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     embedding_dim: int = 1024  # debe coincidir con EMBEDDING_MODEL y con VECTOR(N)
 
     llm_model: str = "qwen/qwen3-vl-30b-a3b-instruct"
+    # Modelo dedicado para la fase de visión. Vacío = usa llm_model (failover
+    # si el LLM de texto queda configurado y no acepta imágenes).
+    vision_model: str = ""
     llm_timeout_seconds: float = 6.0  # redacción con texto
     vision_timeout_seconds: float = 15.0  # descripción de la imagen (tarda más)
     max_imagenes: int = 3
