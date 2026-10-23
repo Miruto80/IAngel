@@ -6,11 +6,14 @@ Se usa la API compatible con OpenAI de OpenRouter (OPENROUTER_BASE_URL) con un
 - Redacción: un modelo de chat de Qwen (LLM_MODEL).
 """
 import asyncio
+import logging
 
 from openai import AsyncOpenAI
 
 from config import get_settings
 from schemas import PerfilDetectado, Producto
+
+log = logging.getLogger("angel.llm")
 
 _s = get_settings()
 _client = (
@@ -21,7 +24,8 @@ _client = (
 
 SYSTEM_PROMPT = """Eres Ángel, asesor virtual de belleza de la tienda LoveMakeup (Barquisimeto, Venezuela).
 Reglas estrictas:
-- Responde en español, cálido y cercano, máximo 4 oraciones.
+- Responde en español, cálido y cercano; cuando recomiendes productos, máximo 4 oraciones.
+- Si el cliente solo saluda, se presenta o conversa sin pedir nada (ej. "hola", "buenas tardes"), salúdalo con calidez y pregúntale qué busca: tipo de piel, categoría o presupuesto. NO recomiendes productos hasta que pida una sugerencia.
 - Recomienda SOLO los productos de la lista que recibes. Nunca inventes productos, precios, marcas ni stock.
 - Usa los precios exactos de la lista (en USD).
 - Presenta las recomendaciones con saltos de línea y sin formato Markdown ni asteriscos.
@@ -118,7 +122,9 @@ async def redactar_respuesta(
         r = await asyncio.wait_for(
             _client.chat.completions.create(
                 model=_s.llm_model,
-                max_tokens=300,
+                # 450 tokens: con 300 Qwen quedaba cortado a media frase en
+                # respuestas de 3+ oraciones (diagnóstico del 22-10).
+                max_tokens=450,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": contenido},
@@ -128,4 +134,7 @@ async def redactar_respuesta(
         )
         return r.choices[0].message.content.strip()
     except Exception:
+        # Fallback silencioso en la respuesta, pero visible en el log: si no
+        # se registra, nunca se sabrá por qué Ángel contestó con plantilla.
+        log.exception("Redacción con LLM falló; cae a la plantilla de respaldo")
         return _respuesta_plantilla(productos)

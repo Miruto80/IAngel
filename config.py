@@ -36,7 +36,10 @@ class Settings(BaseSettings):
     # Modelo dedicado para la fase de visión. Vacío = usa llm_model (failover
     # si el LLM de texto queda configurado y no acepta imágenes).
     vision_model: str = ""
-    llm_timeout_seconds: float = 6.0  # redacción con texto
+    # Redacción con texto. 10.0 porque OpenRouter responde en ~2-5.5s con picos
+    # por encima de 6.0 (diagnóstico 22-10: la plantilla seca saltaba justo
+    # ahí). La plantilla queda como último recurso, no como rutina.
+    llm_timeout_seconds: float = 10.0
     vision_timeout_seconds: float = 15.0  # descripción de la imagen (tarda más)
     max_imagenes: int = 3
 
