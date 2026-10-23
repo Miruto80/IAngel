@@ -346,6 +346,41 @@ ALTER TABLE `producto`
   ADD CONSTRAINT `producto_ibfk_1` FOREIGN KEY (`id_categoria`) REFERENCES `categoria` (`id_categoria`),
   ADD CONSTRAINT `producto_ibfk_2` FOREIGN KEY (`id_marca`) REFERENCES `marca` (`id_marca`);
 
+-- Base de conocimiento y memoria de chat de Ángel
+-- Requiere MariaDB 11.7+ por el tipo VECTOR.
+
+-- Fichas de conocimiento curadas; los embeddings los genera seed.py.
+CREATE TABLE IF NOT EXISTS `angel_conocimiento` (
+    `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `tema` varchar(80) NOT NULL COMMENT 'Título corto de la ficha',
+    `tipo` varchar(20) NOT NULL DEFAULT 'faq' COMMENT 'faq|envio|politica|uso|tip',
+    `contenido` text NOT NULL COMMENT 'Lo que Ángel puede consultar verificada',
+    `embedding` vector(1024) DEFAULT NULL COMMENT 'bge-m3; lo llena seed.py, no a mano',
+    `activo` tinyint(1) NOT NULL DEFAULT 1 COMMENT '0 = ficha desactivada sin borrarla',
+    `actualizado_en` timestamp NOT NULL DEFAULT current_timestamp
+        ON UPDATE current_timestamp
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Memoria de conversaciones por usuario autenticado; los invitados no se guardan.
+CREATE TABLE IF NOT EXISTS `angel_chat_mensaje` (
+    `id` bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `usuario` varchar(30) NOT NULL,
+    `rol` enum('usuario','asistente') NOT NULL,
+    `contenido` varchar(1000) NOT NULL,
+    `creado_en` timestamp NOT NULL DEFAULT current_timestamp,
+    KEY `idx_usuario_recent` (`usuario`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Grants del usuario 'angel' (comodines de host según el entorno):
+-- GRANT SELECT, INSERT, UPDATE ON u417714339_Lovemakeupbd.angel_conocimiento TO 'angel'@'%';
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON u417714339_Lovemakeupbd.angel_chat_mensaje TO 'angel'@'%';
+
+-- Plantillas de fichas: editar el texto y ejecutar; una fila = un conocimiento.
+-- INSERT INTO `angel_conocimiento` (`tema`, `tipo`, `contenido`) VALUES
+-- ('Envíos a Barquisimeto', 'envio', 'Hacemos envíos a todo el país; en Barquisimeto la entrega es en 24 horas y fuera de la ciudad en 48 a 72 horas.'),
+-- ('Horario de atención', 'politica', 'Atendemos de lunes a sábado de 8:00 am a 6:00 pm por WhatsApp y por el chat de la web.'),
+-- ('Garantía de productos', 'politica', 'Todos los productos son originales; si llega defectuoso se cambia en 5 días presentando foto y factura.');
+
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
