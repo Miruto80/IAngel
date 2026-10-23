@@ -105,6 +105,11 @@ def _quitar_saludo_repetido(respuesta: str, historial: list | None) -> str:
     return sin_saludo or "Claro, dime qué necesitas y te ayudo 😊"
 
 
+def _quitar_asteriscos_markdown(respuesta: str) -> str:
+    """Elimina marcadores de énfasis que el modelo puede emitir pese al prompt."""
+    return respuesta.replace("*", "")
+
+
 async def redactar_respuesta(
     mensaje: str,
     perfil: PerfilDetectado,
@@ -150,9 +155,11 @@ async def redactar_respuesta(
             ),
             timeout=_s.llm_timeout_seconds,
         )
-        return _quitar_saludo_repetido(r.choices[0].message.content.strip(), historial)
+        respuesta = _quitar_asteriscos_markdown(r.choices[0].message.content.strip())
+        return _quitar_saludo_repetido(respuesta, historial)
     except Exception:
         # Fallback silencioso en la respuesta, pero visible en el log: si no
         # se registra, nunca se sabrá por qué Ángel contestó con plantilla.
         log.exception("Redacción con LLM falló; cae a la plantilla de respaldo")
-        return _quitar_saludo_repetido(_respuesta_plantilla(productos), historial)
+        respuesta = _quitar_asteriscos_markdown(_respuesta_plantilla(productos))
+        return _quitar_saludo_repetido(respuesta, historial)
