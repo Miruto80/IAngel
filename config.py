@@ -45,7 +45,11 @@ class Settings(BaseSettings):
     historial_guardar: int = 50      # mensajes conservados por usuario
     guardar_anon: bool = False       # invitados (sub anon_*) no se guardan
     conocimiento_top: int = 3        # fichas internas inyectadas al prompt
-    conocimiento_distancia_max: float = 0.45  # umbral coseno para usar ficha
+    # Umbral coseno para usar una ficha. Calibrado con bge-m3 el 22-10: las
+    # fichas pertinentes quedan ~0.4-0.5 y el ruido arranca ~0.51+; con 0.45
+    # quedaban fuera fichas correctas (la de envíos medía 0.507). El
+    # SYSTEM_PROMPT ya indica al modelo usar cada ficha solo si encaja.
+    conocimiento_distancia_max: float = 0.55
 
     cors_origins: str = "http://localhost,http://127.0.0.1"
 

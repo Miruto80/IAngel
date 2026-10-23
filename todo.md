@@ -1,9 +1,10 @@
-# TODO — Ángel × LoveMakeup (estado del día: 2026-10-21)
+# TODO — Ángel × LoveMakeup (estado del día: 2026-10-22)
 
 > Congelación del estado al cerrar la sesión de integración en la VM (Ubuntu 26.04 en Termux proot).
 > Este archivo va versionado (no está en `.gitignore`): continúa desde la PC con este checklist.
 > **Actualización de la tarde (PC Windows)**: entorno local completo funcionando — ver "Hecho hoy".
 > **22-10 (VM)**: fase de visión en marcha — fotos en `/api/chat` con `qwen/qwen3-vl-30b-a3b-instruct` (un solo modelo multimodal para texto y fotos; la descripción entra al embedding `bge-m3` y al prompt). Pendiente e2e con fotos en la PC.
+> **22-10 (PC)**: ítem 7 del plan PC aplicado y probado — tablas + GRANTs + 10 fichas + seed + e2e de memoria y fichas; umbral de conocimiento calibrado 0.45 → 0.55.
 
 ## Mapa rápido
 
@@ -33,7 +34,9 @@
 - [x] **Decisión de diseño — filtro `tipo_piel` opt-in**: el hosting no tiene columna de tipo de piel; esa semántica vive en la descripción (que ya entra en el vector). `db.buscar_productos` ahora filtra solo filas con `tipo_piel` curado (`ai.tipo_piel IS NULL` pasa el filtro y decide el coseno). No se fabrican datos; la columna queda lista para cocción manual futura desde phpMyAdmin. `pytest` sigue 7/7
 - [x] **(22-10, VM) Fase de visión implementada**: `ConsultaChat.imagenes` (data URLs base64, máx. `MAX_IMAGENES=3`, ~3 MB c/u); `llm.describir_imagen` describe con el propio `LLM_MODEL` (`qwen/qwen3-vl-30b-a3b-instruct`: un solo modelo multimodal para texto y fotos) y la descripción entra al perfil, al embedding (`texto_para_embedding`) y al prompt de redacción. Si la visión falla o tarda (`VISION_TIMEOUT_SECONDS=15`), el flujo sigue con solo texto (nunca 502 por una foto). Manejo de rostro: solo rasgos de piel visibles, sin identificar personas ni diagnósticos. `pytest` 7/7; llamada de visión validada en vivo contra OpenRouter. El widget `chat.php` ahora SÍ envía las imágenes (canvas máx 1024px + JPEG 0.85, limpieza tras enviar, badge con el contador, texto por defecto si van solo fotos); `prueba_e2e.py` soporta `imagen ruta.jpg`. Pendiente: e2e completo con foto en la PC (ítem 5 del plan PC)
 - [x] **(22-10, e2e en PC) Visión con Foto REAL de rostro VERDE**: la descripción detectó "tono uniforme con ligero brillo en zona T, sin acné ni rojeces" → entró al embedding → recomendación correcta. Pipeline completo 16.1s (visión ~11s + embedding + redacción). Optimización disponible si molesta la latencia: `detail: "low"` en `describir_imagen`
-- [x] **(22-10, VM) Memoria de conversaciones + base de conocimiento ("Ángel aprende")**: `BD/angel_chat.sql` con `angel_chat_mensaje` (por `sub`; **solo usuarios logueados**, `anon_*` no se guarda — decisión del equipo) y `angel_conocimiento` (fichas curadas en phpMyAdmin + `VECTOR(1024)`); `db.leer_conversacion` (últimos `HISTORIAL_PROMPT=8` turnos al prompt) y `db.guardar_conversacion` (best-effort + retención `HISTORIAL_GUARDAR=50`) y `db.buscar_conocimiento` (coseno ≤ `CONOCIMIENTO_DISTANCIA_MAX=0.45`, `CONOCIMIENTO_TOP=3`); `llm.redactar_respuesta` recibe historial + fichas (SYSTEM_PROMPT: continuar el hilo, usar fichas solo si encajan); `seed.py conocimiento` (bge-m3); `chat.php` firma el JWT con la cédula de `$_SESSION['id']` (invitados: `anon_*`). Tests **9/9** (2 nuevos de historial). Pendiente en PC: ítem 7 del plan PC (aplicar SQL + fichas + seed + prueba real)
+- [x] **(22-10, VM) Memoria de conversaciones + base de conocimiento ("Ángel aprende")**: `BD/angel_chat.sql` con `angel_chat_mensaje` (por `sub`; **solo usuarios logueados**, `anon_*` no se guarda — decisión del equipo) y `angel_conocimiento` (fichas curadas en phpMyAdmin + `VECTOR(1024)`); `db.leer_conversacion` (últimos `HISTORIAL_PROMPT=8` turnos al prompt) y `db.guardar_conversacion` (best-effort + retención `HISTORIAL_GUARDAR=50`) y `db.buscar_conocimiento` (coseno ≤ `CONOCIMIENTO_DISTANCIA_MAX=0.55` tras calibración, `CONOCIMIENTO_TOP=3`); `llm.redactar_respuesta` recibe historial + fichas (SYSTEM_PROMPT: continuar el hilo, usar fichas solo si encajan); `seed.py conocimiento` (bge-m3); `chat.php` firma el JWT con la cédula de `$_SESSION['id']` (invitados: `anon_*`). Tests **9/9** (2 nuevos de historial). En PC: ver "Hecho hoy" del 22-10 (ítem 7 aplicado y probado)
+- [x] **(22-10, PC) Ítem 7 aplicado y probado en local**: `BD/angel_chat.sql` ejecutado como root en MariaDB-Angel (tablas `angel_conocimiento` + `angel_chat_mensaje` creadas) + GRANTs del usuario `angel`@`%` (SELECT/INSERT/UPDATE en conocimiento; SELECT/INSERT/UPDATE/DELETE en mensajes); sembradas **10 fichas de prueba** (3 plantillas del SQL + 7 tips genéricos por tipo de piel — las reales las cura el negocio en phpMyAdmin); `seed.py conocimiento` → **10/10 vectorizadas**. e2e verde: memoria (3 turnos persistidos; follow-up "ese producto" resuelto por el historial con perfil vacío), ficha garantía usada textualmente ("5 días con foto y factura"), ficha envíos usada tras el ajuste de umbral ("48 y 72 horas")
+- [x] **(22-10, PC) Umbral de conocimiento calibrado: `CONOCIMIENTO_DISTANCIA_MAX` 0.45 → 0.55**: con bge-m3 las fichas pertinentes quedan ~0.4-0.5 (garantía 0.404, horario 0.242, tip grasa 0.364) y la de envíos —correcta— medía 0.507 y NO entraba con 0.45; el ruido arranca ~0.51-0.54 y el SYSTEM_PROMPT ya decide si aplica la ficha inyectada. Cambio en `config.py` (default), `.env` y `.env.example`; `pytest` 9/9 y e2e de envíos re-verificado con uvicorn reiniciado (settings cacheados al arranque)
 
 ## 🔜 Pendiente priorizado — para hacer en la PC
 
@@ -43,13 +46,13 @@
 - [ ] **4. (Opcional) MariaDB en la VM**: quedó rota (`mariadb-server` en estado `iHR`, datadir vacío); solo si se quiere dev desde el teléfono — la BD real de desarrollo vive en la PC (`MariaDB-Angel`, 11.8.4, puerto 23307)
 - [ ] **5. e2e con fotos en la PC**: `python prueba_e2e.py imagen ruta.jpg` contra el servidor local, una vez integrada la fase de visión ítems de abajo
 - [ ] **6. (Ya identificado) .env de la PC desactualizado**: el 22-10 la visión falló con `404 - No endpoints found that support image input` porque la PC dejaron `LLM_MODEL` en el modelo SOLO-TEXTO (`qwen3-30b-a3b-instruct-2507`); el fallback funcionó (200 en 3.4s). Corregir: `LLM_MODEL=qwen/qwen3-vl-30b-a3b-instruct` en `.env` **y reiniciar uvicorn**. No volver a este error: el código ahora soporta `VISION_MODEL` opcional para apuntar la visión a su propio modelo VL aunque el LLM sea de texto
-- [ ] **7. Base de conocimiento + memoria (NUEVO, "Ángel aprende")**:
-  1) `git pull` (el commit trae `BD/angel_chat.sql` + todo el código)
-  2) En phpMyAdmin sobre `u417714339_lovemakeupbd` (MariaDB-Angel 23307) ejecutar `BD/angel_chat.sql` (crea `angel_conocimiento` + `angel_chat_mensaje`) y los `GRANT` del usuario angel (comentados en el SQL)
-  3) Llenar 10-20 fichas (envíos, horarios, garantía, tips por tipo de piel — hay plantillas INSERT comentadas en el SQL)
-  4) `python seed.py conocimiento` (vectoriza; contendrá VECTOR(1024))
-  5) Probar memoria: chatear logueado (chat.php firma con `$_SESSION['id']`), refrescar la página y seguir el hilo; probar una pregunta de ficha (ej. "¿hacen envíos a Yaracal?")
-  6) Ajuste fino si hace falta: `HISTORIAL_PROMPT`, `CONOCIMIENTO_DISTANCIA_MAX` (0.45 por defecto; bajar si inyecta fichas que sobran)
+- [x] **7. Base de conocimiento + memoria (NUEVO, "Ángel aprende") — HECHO en la PC el 22-10** (detalle en "Hecho hoy"):
+  1) `git pull` — estaba al día (commit `2664ee2`)
+  2) `BD/angel_chat.sql` aplicado como root en MariaDB-Angel 23307 + GRANTs de `angel`@`%` (la única cuenta angel es la de host `%`)
+  3) 10 fichas de prueba sembradas (3 plantillas del SQL + 7 tips genéricos de piel) — las fichas de producción las escribe el equipo en phpMyAdmin
+  4) `python seed.py conocimiento` → 10/10 vectorizadas
+  5) e2e verde: memoria por usuario (3 turnos + follow-up resuelto por historial), ficha garantía, ficha envíos
+  6) Ajuste fino hecho: `CONOCIMIENTO_DISTANCIA_MAX` 0.45 → 0.55; `HISTORIAL_PROMPT` queda en 8. Si algún día inyecta fichas que sobran, bajarlo (el ruido bge-m3 vive ~0.51-0.54)
 
 ## 🔜 Pendiente — IAngel / entornos
 
