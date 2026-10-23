@@ -41,12 +41,17 @@
 
 ## 🔜 Pendiente priorizado — para hacer en la PC
 
-- [ ] **1. Widget de punta a punta**: `git clone` de `Lovemakeup-3.0` en la PC + `passconfig.env` (`ANGEL_API_URL`, `ANGEL_PRIVATE_KEY_PATH=config/jwt_private.pem`) + par de llaves + tienda en XAMPP (Apache/PHP; la 10.x sirve: VECTOR solo lo necesita Ángel) → probar el chat real en el navegador, texto y con foto
+- [ ] **1. Widget de punta a punta — PARCIAL (22-10)**: ya existe el clon en `c:\xampp\htdocs\LoveMakeup\Lovemakeup-3.0` (rama `Local` al día, HEAD `5fdd661`) con `config/jwt_{private,public}.pem` y `passconfig.env` con SMTP/Cloudinary/BD. **Falta añadir al final de `passconfig.env`** (gitignored, no se versiona):
+  ```dotenv
+  ANGEL_API_URL=http://127.0.0.1:8000/api/chat
+  ANGEL_PRIVATE_KEY_PATH=C:\Users\Administrador\Desktop\IA-angel\IAngel\ai_private.pem
+  ```
+  (la privada del par de PRUEBA de la PC — IAngel local verifica con `ai_public.pem`; con la del par A del clon todo devolvería 401). Tienda servida por `c:\xampp\apache` en `http://localhost:8080/LoveMakeup/Lovemakeup-3.0`. Luego: login en la tienda → chat real en navegador, texto y con foto (sin esas vars, `chat.php` no firma token y el chat queda en modo degradado sin llamar a Ángel)
 - [ ] **2. Decisión de despliegue**: dónde correrá Ángel en producción (¿hosting con Passenger? ¿VPS?) — de esto salen `CORS_ORIGINS`, `ANGEL_API_URL` público y el hosting de las llaves
 - [ ] **3. Uniformar llaves al desplegar**: en el hosting colocar `config/jwt_private.pem` **y** `config/jwt_public.pem` del mismo par **a la vez** (si no, los logins fallarían; tokens de 1 h → ventana sin impacto). El par del PC es de PRUEBA; el "par A real" está en la VM (`ai_*.pem` de Download)
 - [ ] **4. (Opcional) MariaDB en la VM**: quedó rota (`mariadb-server` en estado `iHR`, datadir vacío); solo si se quiere dev desde el teléfono — la BD real de desarrollo vive en la PC (`MariaDB-Angel`, 11.8.4, puerto 23307)
 - [ ] **5. e2e con fotos en la PC**: `python prueba_e2e.py imagen ruta.jpg` contra el servidor local, una vez integrada la fase de visión ítems de abajo
-- [ ] **6. (Ya identificado) .env de la PC desactualizado**: el 22-10 la visión falló con `404 - No endpoints found that support image input` porque la PC dejaron `LLM_MODEL` en el modelo SOLO-TEXTO (`qwen3-30b-a3b-instruct-2507`); el fallback funcionó (200 en 3.4s). Corregir: `LLM_MODEL=qwen/qwen3-vl-30b-a3b-instruct` en `.env` **y reiniciar uvicorn**. No volver a este error: el código ahora soporta `VISION_MODEL` opcional para apuntar la visión a su propio modelo VL aunque el LLM sea de texto
+- [x] **6. `.env` con modelo solo-texto — HECHO en la copia de esta PC (22-10)**: `LLM_MODEL=qwen/qwen3-vl-30b-a3b-instruct` en `IAngel/.env` + uvicorn reiniciado (`pytest` 9/9, `/health` ok). **OJO: la OTRA copia (`C:\Proyectos\IAgel`, PC de migue, Python 3.15) sigue con el modelo solo-texto** — allí la visión falló con `404 - No endpoints found that support image input` y el chat continuó solo con texto (200 en 4.2s: fallback esperado, nunca 502 por una foto). Fix en esa copia: `LLM_MODEL=qwen/qwen3-vl-30b-a3b-instruct` en su `.env` **y reiniciar uvicorn** (o `VISION_MODEL=qwen/qwen3-vl-30b-a3b-instruct` dedicado si se quiere conservar un LLM de texto para redacción). `VISION_MODEL` vacío = usa `LLM_MODEL`
 - [x] **7. Base de conocimiento + memoria (NUEVO, "Ángel aprende") — HECHO en la PC el 22-10** (detalle en "Hecho hoy"):
   1) `git pull` — estaba al día (commit `2664ee2`)
   2) `BD/angel_chat.sql` aplicado como root en MariaDB-Angel 23307 + GRANTs de `angel`@`%` (la única cuenta angel es la de host `%`)
