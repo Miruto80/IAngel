@@ -7,6 +7,7 @@ Se usa la API compatible con OpenAI de OpenRouter (OPENROUTER_BASE_URL) con un
 """
 import asyncio
 import logging
+import re
 
 from openai import AsyncOpenAI
 
@@ -25,7 +26,9 @@ _client = (
 SYSTEM_PROMPT = """Eres Ángel, asesor virtual de belleza de la tienda LoveMakeup (Barquisimeto, Venezuela).
 Reglas estrictas:
 - Responde en español, cálido y cercano; cuando recomiendes productos, máximo 4 oraciones.
-- Si el cliente solo saluda, se presenta o conversa sin pedir nada (ej. "hola", "buenas tardes"), salúdalo con calidez y pregúntale qué busca: tipo de piel, categoría o presupuesto. NO recomiendes productos hasta que pida una sugerencia.
+- El widget ya muestra el saludo inicial. Si hay una respuesta previa del asistente en el historial, nunca vuelvas a empezar con "Hola", "Buenas" ni te presentes de nuevo; responde directamente al mensaje y continúa la conversación con naturalidad.
+- Si el cliente solo saluda o conversa sin pedir productos, contéstale de forma cercana, con personalidad y sin recomendar productos hasta que lo pida.
+- Usa emojis con naturalidad y bromas breves cuando encajen, sin forzarlas.
 - Recomienda SOLO los productos de la lista que recibes. Nunca inventes productos, precios, marcas ni stock.
 - Usa los precios exactos de la lista (en USD).
 - Presenta las recomendaciones con saltos de línea y sin formato Markdown ni asteriscos.
@@ -80,11 +83,31 @@ def _respuesta_plantilla(productos: list[Producto]) -> str:
     """Respaldo determinista si el LLM falla o tarda demasiado (RNF-01)."""
     if not productos:
         return (
-            "No encontré productos disponibles con esas condiciones. "
+            "No encontré productos disponibles con esas condiciones 😕 "
             "¿Quieres que ajustemos el presupuesto, la categoría o el tipo de piel?"
         )
     lineas = [f"• {p.nombre} ({p.marca or 'LoveMakeup'}) - ${p.precio:.2f}" for p in productos[:3]]
-    return "¡Hola! Esto es lo que te recomiendo según lo que me cuentas:\n" + "\n".join(lineas)
+    return "Estas opciones podrían encajar contigo 😊\n" + "\n".join(lineas)
+
+
+def _quitar_saludo_repetido(respuesta: str, historial: list | None) -> str:
+    if not historial or not any(getattr(turno, "rol", None) == "asistente" for turno in historial):
+        return respuesta
+
+    sin_saludo = re.sub(
+        r"^\s*(?:(?:¡\s*)?(?:hola|holi|hey|saludos)\s*[!¡,.:;—-]*"
+        r"|(?:¡\s*)?buenas(?:\s+(?:tardes|noches|d[ií]as))?\s*[!¡,.:;—-]+)\s*",
+        "",
+        respuesta,
+        count=1,
+        flags=re.IGNORECASE,
+    ).strip()
+    return sin_saludo or "Claro, dime qué necesitas y te ayudo 😊"
+
+
+def _quitar_asteriscos_markdown(respuesta: str) -> str:
+    """Elimina marcadores de énfasis que el modelo puede emitir pese al prompt."""
+    return respuesta.replace("*", "")
 
 
 async def redactar_respuesta(
@@ -132,9 +155,11 @@ async def redactar_respuesta(
             ),
             timeout=_s.llm_timeout_seconds,
         )
-        return r.choices[0].message.content.strip()
+        respuesta = _quitar_asteriscos_markdown(r.choices[0].message.content.strip())
+        return _quitar_saludo_repetido(respuesta, historial)
     except Exception:
         # Fallback silencioso en la respuesta, pero visible en el log: si no
         # se registra, nunca se sabrá por qué Ángel contestó con plantilla.
         log.exception("Redacción con LLM falló; cae a la plantilla de respaldo")
-        return _respuesta_plantilla(productos)
+        respuesta = _quitar_asteriscos_markdown(_respuesta_plantilla(productos))
+        return _quitar_saludo_repetido(respuesta, historial)

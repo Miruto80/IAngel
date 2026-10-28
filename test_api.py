@@ -32,6 +32,7 @@ from pydantic import ValidationError  # noqa: E402
 from auth import verificar_token  # noqa: E402
 from config import get_settings  # noqa: E402
 from db import embedding_a_texto  # noqa: E402
+from llm import _quitar_asteriscos_markdown, _quitar_saludo_repetido  # noqa: E402
 from nlp import extraer_perfil  # noqa: E402
 from schemas import ConsultaChat  # noqa: E402
 
@@ -101,3 +102,31 @@ def test_historial_rechaza_demasiados_turnos():
     muchos = [{"role": "user", "content": f"m{i}"} for i in range(20)]
     with pytest.raises(ValidationError):
         ConsultaChat(mensaje="buenas", historial=muchos)
+
+
+def test_quita_saludo_si_ya_hubo_respuesta_del_asistente():
+    historial = ConsultaChat(
+        mensaje="hola",
+        historial=[{"role": "assistant", "content": "¡Hola! ¿En qué te ayudo?"}],
+    ).historial
+    assert _quitar_saludo_repetido("¡Hola! Claro, te ayudo 😊", historial) == "Claro, te ayudo 😊"
+
+
+def test_conserva_saludo_si_no_hay_historial_del_asistente():
+    historial = ConsultaChat(
+        mensaje="hola",
+        historial=[{"role": "user", "content": "hola"}],
+    ).historial
+    respuesta = "¡Hola! ¿En qué te ayudo?"
+    assert _quitar_saludo_repetido(respuesta, historial) == respuesta
+
+
+def test_quita_asteriscos_de_negritas_markdown():
+    respuesta = (
+        "Te recomiendo el **Polvo suelto premium de Salome** ($6.00). "
+        "El **Polvo sencillo de Salome** también es una opción."
+    )
+    resultado = _quitar_asteriscos_markdown(respuesta)
+    assert "*" not in resultado
+    assert "Polvo suelto premium de Salome" in resultado
+    assert "Polvo sencillo de Salome" in resultado
