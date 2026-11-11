@@ -27,6 +27,7 @@ SYSTEM_PROMPT = """Eres Ángel, asesor virtual de belleza de la tienda LoveMakeu
 Reglas estrictas:
 - Responde en español, cálido y cercano; cuando recomiendes productos, máximo 4 oraciones.
 - El widget ya muestra el saludo inicial. Si hay una respuesta previa del asistente en el historial, nunca vuelvas a empezar con "Hola", "Buenas" ni te presentes de nuevo; responde directamente al mensaje y continúa la conversación con naturalidad.
+- Si el cliente responde afirmativamente a una pregunta anterior, contesta esa pregunta como continuación. No reinicies la conversación ni repitas opciones ya recomendadas; si falta un dato para responder, haz una sola pregunta breve.
 - Si el cliente solo saluda o conversa sin pedir productos, contéstale de forma cercana, con personalidad y sin recomendar productos hasta que lo pida.
 - Usa emojis con naturalidad y bromas breves cuando encajen, sin forzarlas.
 - Recomienda SOLO los productos de la lista que recibes. Nunca inventes productos, precios, marcas ni stock.
@@ -110,6 +111,38 @@ def _quitar_asteriscos_markdown(respuesta: str) -> str:
     return respuesta.replace("*", "")
 
 
+def _normalizar_respuesta(respuesta: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", "", respuesta.casefold())).strip()
+
+
+def _respuesta_repetida(respuesta: str, historial: list | None) -> bool:
+    if not historial:
+        return False
+
+    actual = _normalizar_respuesta(
+        _quitar_saludo_repetido(_quitar_asteriscos_markdown(respuesta), historial)
+    )
+    if len(actual) < 40:
+        return False
+
+    anteriores = (
+        _normalizar_respuesta(
+            _quitar_saludo_repetido(turno.contenido, historial)
+        )
+        for turno in historial
+        if getattr(turno, "rol", None) == "asistente"
+    )
+    return any(actual == anterior for anterior in anteriores)
+
+
+def _finalizar_respuesta(respuesta: str, historial: list | None) -> str:
+    respuesta = _quitar_saludo_repetido(_quitar_asteriscos_markdown(respuesta), historial)
+    if _respuesta_repetida(respuesta, historial):
+        log.warning("La respuesta generada coincidió con una respuesta anterior")
+        return "Perdona, repetí una respuesta anterior. ¿Qué detalle quieres que revise?"
+    return respuesta
+
+
 async def redactar_respuesta(
     mensaje: str,
     perfil: PerfilDetectado,
@@ -119,7 +152,7 @@ async def redactar_respuesta(
     fichas: list[tuple[str, str, str]] | None = None,
 ) -> str:
     if _client is None:
-        return _respuesta_plantilla(productos)
+        return _finalizar_respuesta(_respuesta_plantilla(productos), historial)
 
     catalogo = "\n".join(
         f"- id={p.id} | {p.nombre} | {p.categoria} | {p.marca} | ${p.precio:.2f} | "
@@ -142,24 +175,48 @@ async def redactar_respuesta(
     secciones.append(f"Productos disponibles:\n{catalogo}")
     contenido = "\n".join(secciones)
     try:
+        mensajes = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": contenido},
+        ]
+        parametros = {
+            "model": _s.llm_model,
+            # 450 tokens: con 300 Qwen quedaba cortado a media frase en
+            # respuestas de 3+ oraciones (diagnóstico del 22-10).
+            "max_tokens": 450,
+        }
         r = await asyncio.wait_for(
-            _client.chat.completions.create(
-                model=_s.llm_model,
-                # 450 tokens: con 300 Qwen quedaba cortado a media frase en
-                # respuestas de 3+ oraciones (diagnóstico del 22-10).
-                max_tokens=450,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": contenido},
-                ],
-            ),
+            _client.chat.completions.create(messages=mensajes, **parametros),
             timeout=_s.llm_timeout_seconds,
         )
-        respuesta = _quitar_asteriscos_markdown(r.choices[0].message.content.strip())
-        return _quitar_saludo_repetido(respuesta, historial)
+        respuesta = r.choices[0].message.content.strip()
+        if _respuesta_repetida(respuesta, historial):
+            log.warning("El LLM repitió una respuesta previa; se solicita una continuación")
+            mensajes = [
+                {
+                    "role": "system",
+                    "content": (
+                        SYSTEM_PROMPT
+                        + "\nLa respuesta anterior repitió una contestación del historial. "
+                        "No vuelvas a recomendar los mismos productos ni reinicies la conversación. "
+                        "Interpreta el mensaje actual como respuesta a la pregunta más reciente "
+                        "del asistente; si falta información, haz una pregunta breve."
+                    ),
+                },
+                {"role": "user", "content": contenido},
+            ]
+            try:
+                r = await asyncio.wait_for(
+                    _client.chat.completions.create(messages=mensajes, **parametros),
+                    timeout=_s.llm_timeout_seconds,
+                )
+            except Exception:
+                log.exception("El reintento tras una respuesta repetida falló")
+                return "Perdona, no pude responder a esa continuación. ¿Qué detalle quieres que revise?"
+            respuesta = r.choices[0].message.content.strip()
+        return _finalizar_respuesta(respuesta, historial)
     except Exception:
         # Fallback silencioso en la respuesta, pero visible en el log: si no
         # se registra, nunca se sabrá por qué Ángel contestó con plantilla.
         log.exception("Redacción con LLM falló; cae a la plantilla de respaldo")
-        respuesta = _quitar_asteriscos_markdown(_respuesta_plantilla(productos))
-        return _quitar_saludo_repetido(respuesta, historial)
+        return _finalizar_respuesta(_respuesta_plantilla(productos), historial)

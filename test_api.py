@@ -1,8 +1,10 @@
 """Pruebas unitarias (XP): PLN y JWT RS256. Ejecutar: pytest -v"""
+import asyncio
 import os
 import tempfile
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -32,9 +34,15 @@ from pydantic import ValidationError  # noqa: E402
 from auth import verificar_token  # noqa: E402
 from config import get_settings  # noqa: E402
 from db import embedding_a_texto  # noqa: E402
-from llm import _quitar_asteriscos_markdown, _quitar_saludo_repetido  # noqa: E402
+import llm  # noqa: E402
+from llm import (  # noqa: E402
+    _finalizar_respuesta,
+    _quitar_asteriscos_markdown,
+    _quitar_saludo_repetido,
+    _respuesta_repetida,
+)
 from nlp import extraer_perfil  # noqa: E402
-from schemas import ConsultaChat  # noqa: E402
+from schemas import ConsultaChat, PerfilDetectado  # noqa: E402
 
 
 def _cred(token: str):
@@ -119,6 +127,72 @@ def test_conserva_saludo_si_no_hay_historial_del_asistente():
     ).historial
     respuesta = "¡Hola! ¿En qué te ayudo?"
     assert _quitar_saludo_repetido(respuesta, historial) == respuesta
+
+
+def test_detecta_repeticion_de_cualquier_respuesta_anterior():
+    primera = (
+        "Con tu descripción, me encantaría ayudarte a encontrar el labial perfecto para ella. "
+        "Te recomiendo el Lipgloss Dije Tacón de Ushas por su acabado hidratante. "
+        "¿Te gustaría que te recomiende un tono en específico?"
+    )
+    historial = ConsultaChat(
+        mensaje="Siii",
+        historial=[
+            {"role": "assistant", "content": "¡Hola! ¿En qué puedo ayudarte?"},
+            {"role": "user", "content": "¿Qué labial le recomiendas?"},
+            {"role": "assistant", "content": primera},
+            {"role": "user", "content": "Recomiéndame un tono"},
+            {"role": "assistant", "content": "¿Qué estilo de tono prefieres?"},
+        ],
+    ).historial
+
+    assert _respuesta_repetida(primera, historial)
+    assert "repetí una respuesta anterior" in _finalizar_respuesta(primera, historial)
+
+
+def test_reintenta_si_el_modelo_repite_una_respuesta_antigua(monkeypatch):
+    primera = (
+        "Con tu descripción, me encantaría ayudarte a encontrar el labial perfecto para ella. "
+        "Te recomiendo el Lipgloss Dije Tacón de Ushas por su acabado hidratante. "
+        "¿Te gustaría que te recomiende un tono en específico?"
+    )
+    historial = ConsultaChat(
+        mensaje="Siii",
+        historial=[
+            {"role": "assistant", "content": primera},
+            {"role": "user", "content": "Recomiéndame un tono"},
+            {"role": "assistant", "content": "¿Qué estilo de tono prefieres?"},
+        ],
+    ).historial
+
+    class RespuestasDePrueba:
+        def __init__(self):
+            self.llamadas = []
+            self.respuestas = iter([
+                primera,
+                "Para sugerirte un tono, ¿prefiere nude, rosado o rojo?",
+            ])
+
+        async def create(self, **parametros):
+            self.llamadas.append(parametros)
+            contenido = next(self.respuestas)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=contenido))]
+            )
+
+    respuestas = RespuestasDePrueba()
+    cliente = SimpleNamespace(
+        chat=SimpleNamespace(completions=respuestas)
+    )
+    monkeypatch.setattr(llm, "_client", cliente)
+
+    resultado = asyncio.run(
+        llm.redactar_respuesta("Siii", PerfilDetectado(), [], historial=historial)
+    )
+
+    assert resultado == "Para sugerirte un tono, ¿prefiere nude, rosado o rojo?"
+    assert len(respuestas.llamadas) == 2
+    assert "Interpreta el mensaje actual" in respuestas.llamadas[1]["messages"][0]["content"]
 
 
 def test_quita_asteriscos_de_negritas_markdown():

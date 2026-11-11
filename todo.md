@@ -2,6 +2,7 @@
 
 > Congelación del estado al cerrar la sesión de integración en la VM (Ubuntu 26.04 en Termux proot).
 > Este archivo va versionado (no está en `.gitignore`): continúa desde la PC con este checklist.
+> Actualización 11-11-2026: se corrigió el caso donde una respuesta afirmativa corta ("Siii") hacía que el modelo recuperara una respuesta antigua: la detección compara todo el historial y reintenta una vez como continuación de la última pregunta.
 > **Actualización de la tarde (PC Windows)**: entorno local completo funcionando — ver "Hecho hoy".
 > **22-10 (VM)**: fase de visión en marcha — fotos en `/api/chat` con `qwen/qwen3-vl-30b-a3b-instruct` (un solo modelo multimodal para texto y fotos; la descripción entra al embedding `bge-m3` y al prompt). Pendiente e2e con fotos en la PC.
 > **22-10 (PC)**: ítem 7 del plan PC aplicado y probado — tablas + GRANTs + 10 fichas + seed + e2e de memoria y fichas; umbral de conocimiento calibrado 0.45 → 0.55.
