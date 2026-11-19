@@ -1,4 +1,6 @@
 .env
+.env.render
+.env.render.local
 
 # Llaves privadas / certificados (nunca versionar)
 *.pem

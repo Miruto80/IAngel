@@ -18,6 +18,17 @@ CREATE TABLE IF NOT EXISTS angel_conocimiento (
 
 -- 2) Memoria de conversaciones por usuario autenticado (sub = cédula del
 --    token RS256). Los invitados (sub anon_*) NO se guardan.
+--
+--    NOTA DE DISEÑO — por qué `usuario` NO lleva FOREIGN KEY:
+--    - `usuario` guarda el `sub` del JWT: la cédula del usuario de la tienda
+--      o `anon_*` para invitados. La tabla de usuarios de la tienda NO vive
+--      en esta base (está en la segunda base del sistema PHP), y MariaDB no
+--      soporta claves foráneas entre bases distintas.
+--    - Aunque viviera aquí, una FK acoplaría el ciclo de vida: eliminar un
+--      usuario bloquearía (RESTRICT) o borraria (CASCADE) su historial de
+--      chat, que debe sobrevivir de forma independiente.
+--    - La relación funcional la garantiza el índice idx_usuario_recent y la
+--      retención por HISTORIAL_GUARDAR (recorte, no borrado en cascada).
 CREATE TABLE IF NOT EXISTS angel_chat_mensaje (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     usuario VARCHAR(30) NOT NULL,
