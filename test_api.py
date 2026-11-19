@@ -1,4 +1,5 @@
 """Pruebas unitarias (XP): PLN y JWT RS256. Ejecutar: pytest -v"""
+import asyncio
 import os
 import tempfile
 import time
@@ -33,8 +34,10 @@ from auth import verificar_token  # noqa: E402
 from config import get_settings  # noqa: E402
 from db import embedding_a_texto  # noqa: E402
 from llm import _quitar_asteriscos_markdown, _quitar_saludo_repetido  # noqa: E402
+import main  # noqa: E402
 from nlp import extraer_perfil  # noqa: E402
-from schemas import ConsultaChat  # noqa: E402
+import seed  # noqa: E402
+from schemas import ConsultaChat, SolicitudReindexacion  # noqa: E402
 
 
 def _cred(token: str):
@@ -78,6 +81,178 @@ def test_falta_token():
     with pytest.raises(HTTPException) as e:
         verificar_token(None)
     assert e.value.status_code == 401
+
+
+def test_solicitud_reindexacion_valida_id_y_filtros():
+    solicitud = SolicitudReindexacion(
+        tipo="conocimiento",
+        ids=[2, 5],
+        solo_pendientes=True,
+    )
+    assert solicitud.ids == [2, 5]
+    with pytest.raises(ValidationError):
+        SolicitudReindexacion(tipo="todo", id=3)
+    with pytest.raises(ValidationError):
+        SolicitudReindexacion(tipo="productos", solo_pendientes=True)
+
+
+def test_reindexacion_exige_token_con_scope_especifico():
+    solicitud = SolicitudReindexacion(tipo="productos", id=7)
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(main.reindexar(solicitud, {"sub": "1"}))
+    assert e.value.status_code == 403
+
+
+def test_reindexacion_devuelve_cantidad_por_tipo(monkeypatch):
+    async def reindexar_falso(tipo, **kwargs):
+        assert tipo == "productos"
+        assert kwargs["id"] == 7
+        return {"productos": 1}
+
+    monkeypatch.setattr(main.seed, "ejecutar_reindexacion", reindexar_falso)
+    respuesta = asyncio.run(
+        main.reindexar(
+            SolicitudReindexacion(tipo="productos", id=7),
+            {"sub": "admin", "scope": "angel:reindex"},
+        )
+    )
+    assert respuesta["estado"] == "completado"
+    assert respuesta["procesados"] == 1
+    assert respuesta["detalle"] == {"productos": 1}
+
+
+def test_reindexacion_informa_progreso_si_falla(monkeypatch):
+    async def reindexar_falso(tipo, **kwargs):
+        raise main.seed.ErrorReindexacion(
+            "No se pudo indexar el producto ID 9",
+            {"productos": 2},
+        )
+
+    monkeypatch.setattr(main.seed, "ejecutar_reindexacion", reindexar_falso)
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(
+            main.reindexar(
+                SolicitudReindexacion(tipo="productos"),
+                {"sub": "admin", "scope": "angel:reindex"},
+            )
+        )
+    assert e.value.status_code == 502
+    assert e.value.detail["procesados"] == 2
+    assert e.value.detail["detalle"] == {"productos": 2}
+
+
+def test_indexa_solo_ids_de_conocimiento_y_recalcula_vector(monkeypatch):
+    class CursorFalso:
+        def __init__(self):
+            self.consultas = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def execute(self, consulta, parametros=None):
+            self.consultas.append((consulta, parametros))
+
+        async def fetchall(self):
+            if self.consultas[-1][0].startswith("SELECT id FROM angel_conocimiento"):
+                return [(12,)]
+            return [(12, "Envíos", "faq", "Texto curado")]
+
+    class ConexionFalsa:
+        def __init__(self):
+            self.cursor_falso = CursorFalso()
+
+        def cursor(self):
+            return self.cursor_falso
+
+    async def embedding_falso(texto):
+        return [0.0] * get_settings().embedding_dim
+
+    conexion = ConexionFalsa()
+    monkeypatch.setattr(seed, "embed", embedding_falso)
+    cantidad = asyncio.run(seed.indexar_conocimiento(conexion, ids=[12]))
+
+    consulta_select, parametros = conexion.cursor_falso.consultas[0]
+    consulta_update, parametros_update = conexion.cursor_falso.consultas[2]
+    assert "id IN (%s)" in consulta_select
+    assert parametros == [12]
+    assert consulta_update.startswith("UPDATE angel_conocimiento SET embedding")
+    assert parametros_update[1] == 12
+    assert cantidad == 1
+
+
+def test_conocimiento_pendiente_filtra_fichas_sin_embedding():
+    class CursorFalso:
+        consulta = ""
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def execute(self, consulta, parametros=None):
+            self.consulta = consulta
+
+        async def fetchall(self):
+            return []
+
+    class ConexionFalsa:
+        def __init__(self):
+            self.cursor_falso = CursorFalso()
+
+        def cursor(self):
+            return self.cursor_falso
+
+    conexion = ConexionFalsa()
+    cantidad = asyncio.run(
+        seed.indexar_conocimiento(conexion, solo_pendientes=True)
+    )
+    assert "embedding IS NULL" in conexion.cursor_falso.consulta
+    assert cantidad == 0
+
+
+def test_indexar_productos_filtra_por_id(monkeypatch):
+    class CursorFalso:
+        def __init__(self):
+            self.consultas = []
+            self.rowcount = 1
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def execute(self, consulta, parametros=None):
+            self.consultas.append((consulta, parametros))
+
+        async def fetchall(self):
+            return [(9, "Crema", "Descripción", "Cuidado facial", "Marca", None, None)]
+
+    class ConexionFalsa:
+        def __init__(self):
+            self.cursor_falso = CursorFalso()
+
+        def cursor(self):
+            return self.cursor_falso
+
+    async def embedding_falso(texto):
+        return [0.0] * get_settings().embedding_dim
+
+    conexion = ConexionFalsa()
+    monkeypatch.setattr(seed, "embed", embedding_falso)
+    cantidad = asyncio.run(seed.indexar_productos(conexion, producto_id=9))
+
+    insercion, parametros_insert = conexion.cursor_falso.consultas[0]
+    consulta_select, parametros_select = conexion.cursor_falso.consultas[1]
+    assert "id_producto = %s" in insercion
+    assert parametros_insert == (9,)
+    assert "AND p.id_producto = %s" in consulta_select
+    assert parametros_select == [9]
+    assert cantidad == 1
 
 
 def test_embedding_a_texto_exige_la_dimension_configurada():

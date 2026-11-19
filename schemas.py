@@ -1,7 +1,7 @@
 """Esquemas de la API de Ángel: validación de entrada y salida (RF-01/RF-03)."""
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 MAX_IMAGENES = 3
 IMAGEN_MAX_CARACTERES = 4_000_000  # ~3 MB por imagen en base64
@@ -61,6 +61,34 @@ class ConsultaChat(BaseModel):
         if len(normalizado) > MAX_HISTORIAL_TURNOS:
             raise ValueError(f"El historial admite como máximo {MAX_HISTORIAL_TURNOS} turnos")
         return normalizado
+
+
+class SolicitudReindexacion(BaseModel):
+    tipo: Literal["conocimiento", "productos", "todo"]
+    id: int | None = Field(default=None, gt=0)
+    ids: list[int] | None = Field(default=None, min_length=1, max_length=100)
+    solo_pendientes: bool = False
+
+    @field_validator("ids")
+    @classmethod
+    def _validar_ids(cls, valor: list[int] | None) -> list[int] | None:
+        if valor is not None and any(identificador < 1 for identificador in valor):
+            raise ValueError("Todos los IDs deben ser enteros positivos")
+        if valor is not None and len(set(valor)) != len(valor):
+            raise ValueError("La lista de IDs no puede contener duplicados")
+        return valor
+
+    @model_validator(mode="after")
+    def _validar_combinacion(self):
+        if self.id is not None and self.ids is not None:
+            raise ValueError("Use id o ids, no ambos")
+        if self.tipo == "productos" and (self.ids is not None or self.solo_pendientes):
+            raise ValueError("Para productos solo se admite id o reindexación completa")
+        if self.tipo == "todo" and (
+            self.id is not None or self.ids is not None or self.solo_pendientes
+        ):
+            raise ValueError("La reindexación todo no admite filtros")
+        return self
 
 
 class Producto(BaseModel):

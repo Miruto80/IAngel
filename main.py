@@ -11,11 +11,17 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 import db
+import seed
 from auth import verificar_token
 from config import get_settings
 from llm import describir_imagen, generar_embedding, redactar_respuesta
 from nlp import extraer_perfil, texto_para_embedding
-from schemas import ConsultaChat, MensajeHistorial, RespuestaChat
+from schemas import (
+    ConsultaChat,
+    MensajeHistorial,
+    RespuestaChat,
+    SolicitudReindexacion,
+)
 
 log = logging.getLogger("angel")
 logging.basicConfig(level=logging.INFO)
@@ -24,8 +30,11 @@ logging.basicConfig(level=logging.INFO)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.init_pool()
-    yield
-    await db.close_pool()
+    try:
+        yield
+    finally:
+        await db.close_pool()
+        await seed.cerrar_cliente()
 
 
 app = FastAPI(title="Ángel - Asesor de belleza LoveMakeup", version="1.0.0", lifespan=lifespan)
@@ -46,6 +55,62 @@ async def health():
         log.exception("Health check de base de datos falló")
         raise HTTPException(503, "Base de datos no disponible") from e
     return {"status": "ok"}
+
+
+@app.post("/api/reindexar")
+async def reindexar(
+    solicitud: SolicitudReindexacion,
+    usuario_payload: dict = Depends(verificar_token),
+):
+    if usuario_payload.get("scope") != "angel:reindex":
+        raise HTTPException(403, "El token no tiene permiso para reindexar")
+
+    try:
+        procesados = await seed.ejecutar_reindexacion(
+            solicitud.tipo,
+            id=solicitud.id,
+            ids=solicitud.ids,
+            solo_pendientes=solicitud.solo_pendientes,
+        )
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
+    except seed.ErrorReindexacion as e:
+        log.exception("Reindexación parcial de %s", solicitud.tipo)
+        cantidad = sum(e.procesados.values())
+        raise HTTPException(
+            502,
+            detail={
+                "mensaje": f"{e}. Se procesaron {cantidad} registro(s) antes del fallo.",
+                "procesados": cantidad,
+                "detalle": e.procesados,
+            },
+        ) from e
+    except Exception as e:
+        log.exception("Falló la reindexación de %s", solicitud.tipo)
+        raise HTTPException(
+            502,
+            detail={
+                "mensaje": (
+                    "No se pudo completar la reindexación. Revise la conexión con "
+                    "MariaDB, la configuración de OpenRouter y los logs del servicio."
+                ),
+                "procesados": 0,
+                "detalle": {},
+            },
+        ) from e
+
+    total = sum(procesados.values())
+    return {
+        "estado": "completado",
+        "tipo": solicitud.tipo,
+        "procesados": total,
+        "detalle": procesados,
+        "mensaje": (
+            f"Reindexación completada: {total} registro(s) procesado(s)"
+            if total
+            else "No había registros que reindexar"
+        ),
+    }
 
 
 @app.post("/api/chat", response_model=RespuestaChat)

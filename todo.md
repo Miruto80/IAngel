@@ -5,6 +5,7 @@
 > **Actualización de la tarde (PC Windows)**: entorno local completo funcionando — ver "Hecho hoy".
 > **22-10 (VM)**: fase de visión en marcha — fotos en `/api/chat` con `qwen/qwen3-vl-30b-a3b-instruct` (un solo modelo multimodal para texto y fotos; la descripción entra al embedding `bge-m3` y al prompt). Pendiente e2e con fotos en la PC.
 > **22-10 (PC)**: ítem 7 del plan PC aplicado y probado — tablas + GRANTs + 10 fichas + seed + e2e de memoria y fichas; umbral de conocimiento calibrado 0.45 → 0.55.
+> **19-11 (PC)**: reindexación automática/bajo demanda implementada en Ángel y conectada al CRUD PHP; pendiente validar en ejecución con la MariaDB/OpenRouter del entorno.
 
 ## Mapa rápido
 
@@ -15,6 +16,7 @@
 
 ## ✅ Hecho hoy (no repetir)
 
+- [x] **Reindexación automática y bajo demanda (19-11)**: `seed.py` ahora ofrece funciones reutilizables para productos completos/por ID y conocimiento completo/por IDs/solo pendientes, manteniendo CLI; `POST /api/reindexar` verifica JWT más `scope=angel:reindex`; PHP añade `controlador/api/reindexar_angel.php`, protegido por sesión, rol administrador y permiso del módulo Productos. El CRUD reindexa el producto luego de crear/editar (si Ángel falla, conserva el guardado e informa que queda pendiente). Cómo invocarlo desde el panel y ejemplos JSON están en `README.md`. Falta smoke-test con el servicio y OpenRouter reales.
 - [x] **RS256 en IAngel**: `config.py` (`JWT_ALGORITHM=RS256` por defecto + `JWT_PUBLIC_KEY`; `jwt_secret` queda como modo legado HS256), `auth.py` (verifica la firma leyendo el PEM), `test_api.py` con par RSA efímero → `pytest` **7/7 verde** (válido/inválido/expirado/sin token + NLP + dimensiones)
 - [x] **RS256 desde el lado PHP ya existía**: `login.php`, `issue_jwt.php` y ~8 APIs firman/verifican con `config/jwt_{private,public}.pem` (openssl_sign SHA256); no hay secreto compartido HS256 que sincronizar
 - [x] **LLM de pago**: `qwen/qwen3-30b-a3b-instruct-2507` (instructivo, sin razonamiento) y `LLM_TIMEOUT_SECONDS=6.0`

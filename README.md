@@ -81,11 +81,18 @@ Indexa los productos activos existentes:
 
 ```powershell
 python seed.py reindex
+python seed.py reindex 123
+python seed.py conocimiento
+python seed.py conocimiento 12
+python seed.py conocimiento --pendientes
+python seed.py todo
 ```
 
 El comando usa una llamada de embeddings a OpenRouter (baai/bge-m3,
 1024 dimensiones) por producto. Vuelve a ejecutarlo al agregar productos o
-cambiar su descripción, categoría o marca.
+cambiar su descripción, categoría o marca. Un ID explícito vuelve a calcular
+el embedding aunque ya exista; `--pendientes` solo selecciona fichas activas
+con `embedding IS NULL`.
 Para completar las recomendaciones por tipo de piel e ingredientes, rellena
 los campos auxiliares con información verificada, por ejemplo:
 
@@ -106,7 +113,23 @@ uvicorn main:app --reload --port 8000
 
 - `GET http://127.0.0.1:8000/health`: comprueba el acceso a MariaDB.
 - `POST http://127.0.0.1:8000/api/chat`: endpoint protegido por JWT.
+- `POST http://127.0.0.1:8000/api/reindexar`: endpoint protegido por JWT de
+  reindexación; requiere además el alcance `angel:reindex`.
 - `http://127.0.0.1:8000/docs`: documentación OpenAPI.
+
+Ejemplos de cuerpo para `/api/reindexar`:
+
+```json
+{"tipo":"productos","id":123}
+{"tipo":"conocimiento","ids":[2,5]}
+{"tipo":"conocimiento","solo_pendientes":true}
+{"tipo":"todo"}
+```
+
+La respuesta incluye `estado`, el total `procesados` y el desglose `detalle`.
+Los IDs explícitos sirven para refrescar fichas modificadas; para fichas nuevas
+sin vector puede usarse `solo_pendientes`. La operación completa recorre solo
+productos/fichas activos.
 
 Toda la IA pasa por OpenRouter con una única `OPENROUTER_API_KEY`: los
 embeddings usan `EMBEDDING_MODEL` (por defecto `baai/bge-m3`, 1024 dimensiones)
@@ -132,6 +155,31 @@ El cliente reutiliza el token que `login.php` ya devuelve y lo envía en el
 encabezado `Authorization: Bearer` a `/api/chat`, igual que hace con las demás
 APIs. En despliegues separados, usa la URL HTTPS pública del servicio y permite
 el origen de la tienda en `CORS_ORIGINS`.
+
+El panel PHP expone `controlador/api/reindexar_angel.php`, exclusivo para
+administradores con permiso de consulta del módulo Productos. Configura
+`ANGEL_API_URL` y `ANGEL_PRIVATE_KEY_PATH` en `passconfig.env` como para el
+chat; opcionalmente, `ANGEL_REINDEX_URL` permite indicar directamente la URL
+del endpoint de reindexación. El endpoint PHP firma un JWT RS256 de corta
+duración con alcance `angel:reindex`; los JWT del chat no tienen ese alcance y
+no pueden iniciar reindexaciones.
+
+El CRUD de productos reindexa automáticamente solo el ID creado o editado.
+Si Ángel no está disponible, el guardado del producto se conserva y la
+respuesta del CRUD indica que la reindexación quedó pendiente. Para la
+sincronización de conocimientos, el panel puede hacer un `POST` del mismo
+origen al endpoint PHP, por ejemplo:
+
+```javascript
+fetch('controlador/api/reindexar_angel.php', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ tipo: 'conocimiento', solo_pendientes: true })
+});
+```
+
+Para una ficha ya modificada, envía `{"tipo":"conocimiento","id":12}` (o
+`ids` para varias fichas) y se volverá a calcular aunque ya tenga embedding.
 
 ## Base de conocimiento y memoria del chat
 

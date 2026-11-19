@@ -16,6 +16,10 @@ pytest -v                                    # tests unitarios puros (sin BD ni 
 pytest test_api.py::test_jwt_valido          # test individual
 python seed.py reindex                       # indexar embeddings (requiere BD MariaDB 11.7+ + OPENROUTER_API_KEY)
 python seed.py conocimiento                  # vectorizar las fichas de angel_conocimiento (BD/angel_chat.sql)
+python seed.py reindex 123                   # reindexar un producto
+python seed.py conocimiento 12               # reindexar una ficha modificada
+python seed.py conocimiento --pendientes      # solo fichas activas sin embedding
+python seed.py todo                           # catálogo y conocimiento completos
 python prueba_e2e.py                         # e2e contra el servidor local (401/422/chat con JWT RS256; no lo recoge pytest)
 ```
 
@@ -47,6 +51,7 @@ MariaDB local en la PC (Windows): el servicio **`MariaDB-Angel` (11.8.4, puerto 
 
 - `.env` se carga con pydantic-settings; con `JWT_ALGORITHM=RS256` (por defecto) la app no arranca sin `JWT_PUBLIC_KEY`; el modo legado HS256 exige `JWT_SECRET`. `config.get_settings` y el cliente de `llm.py` se crean a nivel de módulo / con `lru_cache`: **los cambios de `.env` requieren reiniciar el proceso**.
 - El PHP ya firma **RS256** con `Lovemakeup-3.0/config/jwt_private.pem` y sus APIs verifican con `config/jwt_public.pem` (mismo par; `login.php`, `issue_jwt.php`, `producto.php`, etc.). Python solo verifica: `JWT_PUBLIC_KEY` debe apuntar al PEM público de ese mismo par (`ai_public.pem` es copia de `config/jwt_public.pem`, mantenlas idénticas). No hay secreto compartido con `passconfig.env`; `chat_widget.js` de aquí es solo ejemplo de cliente y el widget `chat.php` no está committeado en el repo PHP.
+- `POST /api/reindexar` también verifica JWT, y exige el claim `scope=angel:reindex`; el endpoint PHP administrativo firma ese token. Los JWT usados por `/api/chat` conservan su flujo normal, sin permiso de reindexación.
 - La fase de visión está **implementada** (22-10-2026): el widget envía `imagenes` (data URLs base64, máx. `MAX_IMAGENES`) en `ConsultaChat`; `llm.describir_imagen` las interpreta con el propio `LLM_MODEL` y la descripción entra al perfil, al embedding (`texto_para_embedding`) y al prompt de redacción. Si la visión falla o tarda, `/api/chat` continúa con solo texto (nunca 502 por una foto). En fotos de rostro: describir solo rasgos de piel visibles, sin identificar personas ni dar diagnósticos.
 - OpenRouter es la única puerta de IA. El embedding es solo texto: ante una foto siempre hay una descripción textual antes de calcular el vector.
 
